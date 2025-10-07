@@ -4,9 +4,9 @@ import (
 	"net/http"
 	"sync"
 
-	"github.com/go-chi/chi/v5"
-	shared "github.com/thesicktwist1/harmony-shared"
-	"github.com/thesicktwist1/harmony-shared/database"
+	"github.com/go-chi/chi"
+	"github.com/thesicktwist1/harmony/shared"
+	"github.com/thesicktwist1/harmony/shared/database"
 )
 
 const (
@@ -16,6 +16,7 @@ const (
 type clientList map[*client]struct{}
 
 type opts struct {
+	maxConn int
 }
 
 type server struct {
@@ -25,21 +26,26 @@ type server struct {
 
 	opts *opts
 	sync.Mutex
+
 	manager shared.Manager
 }
 
 type optsFunc func(*opts)
 
+func defaultOpts() *opts {
+	return &opts{}
+}
+
 func NewServer(db database.Queries, optsfunc ...optsFunc) *server {
-	o := &opts{}
+	o := defaultOpts()
 	for _, opt := range optsfunc {
 		opt(o)
 	}
 	s := &server{
 		mux:     chi.NewMux(),
 		clients: make(clientList),
-		manager: shared.NewManager(),
 		opts:    o,
+		manager: shared.NewManager(true, db),
 	}
 	return s
 }

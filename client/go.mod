@@ -1,11 +1,11 @@
-module client
+module harmony/client
 
 go 1.24.6
 
 require (
 	github.com/coder/websocket v1.8.14
 	github.com/fsnotify/fsnotify v1.9.0
-	github.com/thesicktwist1/harmony-shared v0.0.0-20251007142844-a3ad62a00204
+    github.com/thesicktwist1/harmony/shared v0.0.0
 )
 
 require (
@@ -17,4 +17,5 @@ require (
 	golang.org/x/sys v0.36.0 // indirect
 )
 
+replace github.com/thesicktwist1/harmony/shared => ../shared
 replace github.com/fsnotify/fsnotify => github.com/thesicktwist1/fsnotify v0.0.0-20250930032603-633c36681ea1

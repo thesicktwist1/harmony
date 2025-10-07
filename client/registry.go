@@ -18,12 +18,12 @@ import (
 	"time"
 
 	"github.com/fsnotify/fsnotify"
-	shared "github.com/thesicktwist1/harmony-shared"
-	"github.com/thesicktwist1/harmony-shared/database"
+	"github.com/thesicktwist1/harmony/shared"
+	"github.com/thesicktwist1/harmony/shared/database"
 )
 
 const (
-	storage = "internal/client/storage"
+	storage = "storage"
 )
 
 type directory struct {

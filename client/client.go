@@ -8,8 +8,8 @@ import (
 
 	"github.com/coder/websocket"
 	"github.com/fsnotify/fsnotify"
-	shared "github.com/thesicktwist1/harmony-shared"
-	"github.com/thesicktwist1/harmony-shared/database"
+	"github.com/thesicktwist1/harmony/shared"
+	"github.com/thesicktwist1/harmony/shared/database"
 )
 
 const (
