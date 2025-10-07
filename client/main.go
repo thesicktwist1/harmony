@@ -10,7 +10,6 @@ import (
 const (
 	sqlite3    = "sqlite3"
 	schema     = "internal/sql/schema"
-	harmonyDB  = "internal/sql/harmony.db"
 	bufferSize = 32
 )
 

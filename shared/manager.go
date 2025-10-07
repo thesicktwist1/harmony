@@ -18,20 +18,16 @@ import (
 )
 
 const (
-	sep = "/"
-
 	TimeLayout = "2006-01-02 15:04:05.999999999 -0700 MST"
-
-	perm            = 0777
-	shortestPathLen = 2
+	perm       = 0777
 )
 
 type Manager struct {
 	isServer bool
-	DB       *database.Queries
+	DB       database.Queries
 }
 
-func NewManager(isServ bool, db *database.Queries) Manager {
+func NewManager(isServ bool, db database.Queries) Manager {
 	return Manager{
 		isServer: isServ,
 		DB:       db,

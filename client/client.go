@@ -31,9 +31,7 @@ func (c *client) Run(ctx context.Context) error {
 	log.Println("client starting...")
 	info, err := os.Stat(storage)
 	if err != nil {
-		if err := os.Mkdir(storage, 0777); err != nil {
-			log.Fatal(err)
-		}
+		return err
 	}
 	if !info.IsDir() {
 		return fmt.Errorf("storage file is not a directory.")
