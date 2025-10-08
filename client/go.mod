@@ -1,5 +1,4 @@
-module harmony/client
-
+module github.com/thesicktwist1/harmony/client
 go 1.24.6
 
 require (

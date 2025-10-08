@@ -5,6 +5,8 @@ import (
 	"sync"
 
 	"github.com/go-chi/chi/v5"
+	"github.com/thesicktwist1/harmony/shared"
+	"github.com/thesicktwist1/harmony/shared/database"
 )
 
 const (
@@ -23,6 +25,8 @@ type server struct {
 	mux  *chi.Mux
 	opts *opts
 	sync.Mutex
+
+	shared.Manager
 }
 
 type optsFunc func(*opts)
@@ -31,7 +35,7 @@ func defaultOpts() *opts {
 	return &opts{}
 }
 
-func NewServer(optsfunc ...optsFunc) *server {
+func NewServer(db database.Queries, optsfunc ...optsFunc) *server {
 	o := defaultOpts()
 	for _, opt := range optsfunc {
 		opt(o)
