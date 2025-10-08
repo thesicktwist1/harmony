@@ -3,9 +3,9 @@ module github.com/thesicktwist1/harmony/server
 go 1.24.6
 
 require (
+	github.com/coder/websocket v1.8.12
 	github.com/go-chi/chi/v5 v5.2.3
 	github.com/thesicktwist1/harmony/shared v0.0.0
-	golang.org/x/net v0.45.0
 )
 
 require (
