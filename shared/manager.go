@@ -11,10 +11,10 @@ import (
 	"log"
 	"os"
 	"path/filepath"
-	"shared/database"
 	"time"
 
 	"github.com/fsnotify/fsnotify"
+	"github.com/thesicktwist1/harmony/shared/database"
 )
 
 const (

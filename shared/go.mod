@@ -1,4 +1,4 @@
-module shared
+module github.com/thesicktwist1/harmony/shared
 
 go 1.24.6
 

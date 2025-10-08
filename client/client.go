@@ -46,7 +46,7 @@ func (c *client) Run(ctx context.Context) error {
 }
 
 func (c *client) ConnectToServer(ctx context.Context) error {
-	db, err := shared.ConnectToDB(sqlite3, harmonyDB)
+	db, err := shared.ConnectToDB(sqlite3, "")
 	if err != nil {
 		return err
 	}
