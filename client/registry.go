@@ -23,7 +23,8 @@ import (
 )
 
 const (
-	storage = "storage"
+	storage    = "storage"
+	bufferSize = 32
 )
 
 type directory struct {
@@ -49,14 +50,16 @@ type registry struct {
 	// message channel used for writing to the connection
 	msgBuffer chan []byte
 
+	// mutex used to keep things safe
 	sync.Mutex
 }
 
-func newRegistry(watcher *fsnotify.Watcher, size int) *registry {
+func newRegistry(watcher *fsnotify.Watcher, db *database.Queries) *registry {
 	return &registry{
 		watcher:    watcher,
 		watchedDir: make(WatchedDir),
-		msgBuffer:  make(chan []byte, size),
+		msgBuffer:  make(chan []byte, bufferSize),
+		DB:         db,
 	}
 }
 
@@ -66,10 +69,6 @@ func newDirectory(name, path string) *directory {
 		path:   path,
 		childs: make(childDirs),
 	}
-}
-
-func (r *registry) SetDB(db *database.Queries) {
-	r.DB = db
 }
 
 func (r *registry) addDir(path string) error {
@@ -312,11 +311,8 @@ func (r *registry) handleFile(ctx context.Context, e fsnotify.Event) error {
 	if err != nil {
 		return err
 	}
-	newHash := sha256.New()
-	if _, err := newHash.Write(data); err != nil {
-		return err
-	}
-	hash := hex.EncodeToString(newHash.Sum(nil))
+	newHash := sha256.Sum256(data)
+	hash := hex.EncodeToString(newHash[:])
 	stat, err := file.Stat()
 	if err != nil {
 		return err

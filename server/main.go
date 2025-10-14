@@ -1,29 +1,52 @@
 package main
 
 import (
+	"context"
+	"database/sql"
 	"log"
-	"net/http"
 	"os"
+	"os/signal"
+	"syscall"
 
-	"github.com/thesicktwist1/harmony/shared"
-	"github.com/thesicktwist1/harmony/shared/database"
-)
-
-const (
-	addr = "localhost:8080"
+	"github.com/joho/godotenv"
+	_ "github.com/tursodatabase/libsql-client-go/libsql"
 )
 
 func main() {
+	if err := godotenv.Load(); err != nil {
+		log.Fatal(".env unreadable: ", err)
+	}
 	dbURL := os.Getenv("DATABASE_URL")
 	if dbURL == "" {
 		log.Fatal("DATABASE_URL environment variable is not set")
 	}
-	sql, err := shared.OpenDB("sqlite3", dbURL)
+	db, err := sql.Open("libsql", dbURL)
 	if err != nil {
 		log.Fatal(err)
 	}
-	db := database.New(sql)
-	server := NewServer(db)
+	defer db.Close()
 
-	log.Fatal(http.ListenAndServe(addr, server.mux))
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	signalChan := make(chan os.Signal, 1)
+
+	signal.Notify(signalChan, syscall.SIGINT, syscall.SIGTERM)
+
+	defer close(signalChan)
+
+	server := NewServer(ctx, db)
+
+	go func() {
+		sig := <-signalChan
+		log.Printf("Received signal : %v. Shutting down...", sig)
+		cancel()
+		if err := server.Shutdown(ctx); err != nil {
+			log.Print("Server forced to shutdown: ", err)
+		}
+	}()
+
+	log.Fatal(server.ListenAndServe())
+
+	log.Print("Server closed successfully.")
 }

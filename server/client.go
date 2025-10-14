@@ -5,7 +5,6 @@ import (
 	"log"
 
 	"github.com/coder/websocket"
-	"github.com/thesicktwist1/harmony/shared"
 )
 
 const (
@@ -34,7 +33,7 @@ func (c *Client) readMessages(ctx context.Context) {
 		case <-ctx.Done():
 			return
 		default:
-			mType, msg, err := c.conn.Read(ctx)
+			mType, payload, err := c.conn.Read(ctx)
 			if err != nil {
 				if websocket.CloseStatus(err) != websocket.StatusNormalClosure {
 					log.Print(err)
@@ -42,15 +41,13 @@ func (c *Client) readMessages(ctx context.Context) {
 				return
 			}
 			if mType == websocket.MessageBinary {
-				op, err := c.server.Receive(msg, ctx)
-				if err != nil {
+				if err := c.server.Receive(ctx, message{
+					sender:  c,
+					payload: payload,
+				}); err != nil {
 					log.Print(err)
 					return
 				}
-				if op == shared.Update {
-					continue
-				}
-				c.server.broadcastMessage(msg, c)
 			}
 		}
 	}

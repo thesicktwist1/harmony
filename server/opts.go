@@ -1,6 +1,8 @@
 package main
 
-import "github.com/coder/websocket"
+import (
+	"github.com/coder/websocket"
+)
 
 type optsFunc func(*opts)
 

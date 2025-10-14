@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"database/sql"
 	"fmt"
 	"log"
 	"os"
@@ -18,12 +19,12 @@ const (
 
 type client struct {
 	registry *registry
-	shared.Manager
+	shared.Hub
 }
 
-func newClient(watcher *fsnotify.Watcher) *client {
+func newClient(watcher *fsnotify.Watcher, db *sql.DB) *client {
 	return &client{
-		registry: newRegistry(watcher, bufferSize),
+		registry: newRegistry(watcher, database.New(db)),
 	}
 }
 
@@ -34,7 +35,7 @@ func (c *client) Run(ctx context.Context) error {
 		return err
 	}
 	if !info.IsDir() {
-		return fmt.Errorf("storage file is not a directory.")
+		return fmt.Errorf("storage file is not a directory")
 	}
 	if err := c.registry.addDir(storage); err != nil {
 		return err
@@ -42,25 +43,20 @@ func (c *client) Run(ctx context.Context) error {
 
 	go c.registry.ListenForEvents(ctx)
 
-	return c.ConnectToServer(ctx)
+	if err := c.ConnectToServer(ctx); err != nil {
+		return err
+	}
+	return nil
 }
 
 func (c *client) ConnectToServer(ctx context.Context) error {
-	db, err := shared.ConnectToDB(sqlite3, "")
-	if err != nil {
-		return err
-	}
-	defer db.Close()
-
-	c.registry.SetDB(database.New(db))
-
 	conn, _, err := websocket.Dial(ctx, localhost, nil)
 	if err != nil {
 		return err
 	}
 	defer conn.CloseNow()
 
-	log.Println("client connected to the server.")
+	log.Println("Connected to the server.")
 
 	go c.writeMessages(ctx, conn)
 	c.readMessages(ctx, conn)
@@ -73,7 +69,7 @@ func (c *client) readMessages(ctx context.Context, conn *websocket.Conn) {
 		case <-ctx.Done():
 			return
 		default:
-			mType, msg, err := conn.Read(ctx)
+			mType, _, err := conn.Read(ctx)
 			if err != nil {
 				if websocket.CloseStatus(err) != websocket.StatusNormalClosure {
 					log.Print(err)
@@ -81,10 +77,7 @@ func (c *client) readMessages(ctx context.Context, conn *websocket.Conn) {
 				}
 			}
 			if mType == websocket.MessageBinary {
-				if err := c.Receive(msg, ctx); err != nil {
-					log.Print(err)
-					return
-				}
+
 			}
 		}
 	}

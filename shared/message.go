@@ -1,6 +1,10 @@
 package shared
 
-import "encoding/json"
+import (
+	"crypto/sha256"
+	"encoding/hex"
+	"encoding/json"
+)
 
 type EnvelopeType int
 
@@ -9,7 +13,7 @@ const (
 )
 
 const (
-	Update = "Update"
+	Update = "UPDATE"
 )
 
 type Envelope struct {
@@ -17,9 +21,6 @@ type Envelope struct {
 	Message []byte       `json:"message"`
 }
 
-type Message interface {
-	SetData([]byte)
-}
 type FileEvent struct {
 	Path    string `json:"path"`
 	NewPath string `json:"newpath"`
@@ -29,7 +30,7 @@ type FileEvent struct {
 	IsDir   bool   `json:"isDir"`
 }
 
-func NewEnvelope(msg Message, Type EnvelopeType) (*Envelope, error) {
+func NewEnvelope(msg any, Type EnvelopeType) (*Envelope, error) {
 	p, err := json.Marshal(msg)
 	if err != nil {
 		return nil, err
@@ -40,10 +41,8 @@ func NewEnvelope(msg Message, Type EnvelopeType) (*Envelope, error) {
 	}, nil
 }
 
-func (f *FileEvent) SetData(data []byte) {
+func (f *FileEvent) New(data []byte) {
 	f.Data = data
-}
-
-func (f *FileEvent) SetHash(hash string) {
-	f.Hash = hash
+	newHash := sha256.Sum256(data)
+	f.Hash = hex.EncodeToString(newHash[:])
 }
