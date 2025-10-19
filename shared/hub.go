@@ -14,7 +14,7 @@ func write(event *FileEvent) error {
 	if _, err := os.Stat(event.Path); err != nil {
 		return err
 	}
-	return os.WriteFile(event.Path, event.Data, 0750)
+	return os.WriteFile(event.Path, event.Data, 0777)
 }
 
 func remove(event *FileEvent) error {
@@ -43,12 +43,13 @@ func create(event *FileEvent) error {
 				if err != nil {
 					return err
 				}
-				defer file.Close()
-				if _, err := file.Write(event.Data); err != nil {
-					return err
-				}
+				file.Close()
 			}
+		} else {
+			return err
 		}
+	} else {
+		return os.ErrExist
 	}
 	return nil
 }

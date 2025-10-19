@@ -193,11 +193,11 @@ func (r *registry) ListenForEvents(ctx context.Context) {
 func (r *registry) Receive(event fsnotify.Event, ctx context.Context) error {
 	switch event.Op {
 	case fsnotify.Create:
-		file, err := os.Stat(event.Name)
+		stat, err := os.Stat(event.Name)
 		if err != nil {
 			return err
 		}
-		if file.IsDir() {
+		if stat.IsDir() {
 			if err := r.addDir(event.Name); err != nil {
 				return err
 			}
@@ -210,11 +210,6 @@ func (r *registry) Receive(event fsnotify.Event, ctx context.Context) error {
 			}
 		}
 	case fsnotify.Remove:
-		if r.isDir(event.Name) {
-			if err := r.removeDir(event.Name); err != nil {
-				return err
-			}
-		}
 		if err := r.handleDelete(ctx, event); err != nil {
 			return err
 		}
@@ -222,17 +217,7 @@ func (r *registry) Receive(event fsnotify.Event, ctx context.Context) error {
 		if err := r.handleRename(ctx, event); err != nil {
 			return err
 		}
-		stat, err := os.Stat(event.Name)
-		if err != nil {
-			return err
-		}
-		if stat.IsDir() {
-			if err := r.addDir(event.Name); err != nil {
-				return err
-			}
-		}
 	case fsnotify.Write:
-
 		if err := r.handleFile(ctx, event); err != nil {
 			return err
 		}
@@ -251,14 +236,18 @@ func (r *registry) handleRename(ctx context.Context, e fsnotify.Event) error {
 	if err != nil {
 		return err
 	}
-	f := &shared.FileEvent{
+	if err := r.broadcastEvent(&shared.FileEvent{
 		NewPath: e.Name,
 		Path:    e.RenamedFrom,
 		Op:      e.Op.String(),
 		IsDir:   stat.IsDir(),
-	}
-	if err := r.broadcastEvent(f); err != nil {
+	}); err != nil {
 		return err
+	}
+	if stat.IsDir() {
+		if err := r.addDir(e.Name); err != nil {
+			return err
+		}
 	}
 	return nil
 }
@@ -276,16 +265,20 @@ func (r *registry) isDir(path string) bool {
 }
 
 func (r *registry) handleDelete(ctx context.Context, e fsnotify.Event) error {
+	if r.isDir(e.Name) {
+		if err := r.removeDir(e.Name); err != nil {
+			return err
+		}
+	}
 	if _, err := r.DB.GetFile(ctx, e.Name); err != nil {
 		if !errors.Is(err, sql.ErrNoRows) {
 			return err
 		}
 	} else {
-		f := &shared.FileEvent{
+		if err := r.broadcastEvent(&shared.FileEvent{
 			Path: e.Name,
 			Op:   e.Op.String(),
-		}
-		if err := r.broadcastEvent(f); err != nil {
+		}); err != nil {
 			return err
 		}
 	}
@@ -401,7 +394,7 @@ func (r *registry) broadcastEvent(event *shared.FileEvent) error {
 	return nil
 }
 
-func (r *registry) Update(ctx context.Context) error {
-	// TODO
+func (r *registry) Sync(ctx context.Context, path string) error {
+
 	return nil
 }

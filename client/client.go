@@ -3,8 +3,9 @@ package main
 import (
 	"context"
 	"database/sql"
-	"fmt"
+	"errors"
 	"log"
+	"log/slog"
 	"os"
 
 	"github.com/coder/websocket"
@@ -32,35 +33,41 @@ func (c *client) Run(ctx context.Context) error {
 	log.Println("client starting...")
 	info, err := os.Stat(storage)
 	if err != nil {
-		return err
+		if !errors.Is(err, os.ErrNotExist) {
+			return err
+		}
+		if err := os.Mkdir(storage, 0777); err != nil {
+			return err
+		}
 	}
 	if !info.IsDir() {
-		return fmt.Errorf("storage file is not a directory")
+		if err := os.Remove(storage); err != nil {
+			return err
+		}
+		if err := os.Mkdir(storage, 0777); err != nil {
+			return err
+		}
 	}
 	if err := c.registry.addDir(storage); err != nil {
 		return err
 	}
-
-	go c.registry.ListenForEvents(ctx)
-
-	if err := c.ConnectToServer(ctx); err != nil {
-		return err
-	}
-	return nil
-}
-
-func (c *client) ConnectToServer(ctx context.Context) error {
-	conn, _, err := websocket.Dial(ctx, localhost, nil)
+	conn, err := c.Connect(ctx)
 	if err != nil {
 		return err
 	}
 	defer conn.CloseNow()
-
-	log.Println("Connected to the server.")
-
 	go c.writeMessages(ctx, conn)
 	c.readMessages(ctx, conn)
 	return nil
+}
+
+func (c *client) Connect(ctx context.Context) (*websocket.Conn, error) {
+	conn, _, err := websocket.Dial(ctx, localhost, nil)
+	if err != nil {
+		return nil, err
+	}
+	log.Println("Connected to the server.")
+	return conn, nil
 }
 
 func (c *client) readMessages(ctx context.Context, conn *websocket.Conn) {
@@ -72,7 +79,7 @@ func (c *client) readMessages(ctx context.Context, conn *websocket.Conn) {
 			mType, _, err := conn.Read(ctx)
 			if err != nil {
 				if websocket.CloseStatus(err) != websocket.StatusNormalClosure {
-					log.Print(err)
+					slog.Error("error abnormal closure", "err", err)
 					return
 				}
 			}
@@ -88,11 +95,11 @@ func (c *client) writeMessages(ctx context.Context, conn *websocket.Conn) {
 		select {
 		case msg, ok := <-c.registry.msgBuffer:
 			if !ok {
-				log.Printf("client message buffer closed, stopping writer")
+				slog.Error("client message buffer closed")
 				return
 			}
 			if err := conn.Write(ctx, websocket.MessageBinary, msg); err != nil {
-				log.Print(err)
+				slog.Error("connection closed error", "err", err)
 				return
 			}
 		case <-ctx.Done():

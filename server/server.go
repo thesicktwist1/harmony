@@ -4,7 +4,8 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
-	"log"
+	"fmt"
+	"log/slog"
 	"net/http"
 	"sync"
 
@@ -14,11 +15,15 @@ import (
 	"github.com/thesicktwist1/harmony/shared/database"
 )
 
+var (
+	ErrServerFull = fmt.Errorf("connection not allowed: server full")
+)
+
 const (
-	storage          = "storage"
-	defaultMaxConn   = 8
+	defaultMaxConn   = 4
 	defaultReadLimit = -1
 	port             = ":8080"
+	storage          = "storage"
 )
 
 type message struct {
@@ -35,7 +40,7 @@ type server struct {
 
 	*opts
 
-	sync.Mutex
+	sync.RWMutex
 
 	shared.Hub
 
@@ -61,22 +66,22 @@ func NewServer(ctx context.Context, db *sql.DB, optsfunc ...optsFunc) *server {
 	}
 
 	mux.HandleFunc("/ws", s.serveWS)
+
 	return s
 }
 
 func (s *server) serveWS(w http.ResponseWriter, r *http.Request) {
-	if s.MaxCapacity() {
-		http.Error(w, ErrMaxCapacity.Error(), http.StatusBadGateway)
-		log.Print(ErrMaxCapacity)
+	if s.AtMaxCapacity() {
+		slog.Error("server full error", "err", ErrServerFull)
+		http.Error(w, ErrServerFull.Error(), http.StatusBadGateway)
 		return
 	}
 	conn, err := websocket.Accept(w, r, s.acceptOpts)
 	if err != nil {
-		log.Print(err)
+		slog.Error("accept error", "err", err)
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	defer conn.CloseNow()
 
 	conn.SetReadLimit(s.readLimit)
 
@@ -86,7 +91,7 @@ func (s *server) serveWS(w http.ResponseWriter, r *http.Request) {
 	s.addClient(c)
 
 	go c.readMessages(s.ctx)
-	c.writeMessages(s.ctx)
+	go c.writeMessages(s.ctx)
 }
 
 func (s *server) addClient(c *Client) {
@@ -98,44 +103,51 @@ func (s *server) addClient(c *Client) {
 func (s *server) removeClient(c *Client) {
 	s.Lock()
 	defer s.Unlock()
-	delete(s.clients, c)
+	_, exists := s.clients[c]
+	if exists {
+		delete(s.clients, c)
+		c.conn.CloseNow()
+	}
 }
 
-func (s *server) MaxCapacity() bool {
-	s.Lock()
-	defer s.Unlock()
-	maxCap := len(s.clients) >= s.maxConn
-	return maxCap
+func (s *server) AtMaxCapacity() bool {
+	s.RLock()
+	defer s.RUnlock()
+	if s.maxConn <= defaultMaxConn {
+		s.maxConn = defaultMaxConn
+	}
+	return len(s.clients) >= s.maxConn
 }
 
 func (s *server) broadcast(msg []byte, sender *Client) {
-	s.Lock()
-	clients := s.clients
-	s.Unlock()
+	s.RLock()
+	clients := make(map[*Client]struct{})
+	for client := range s.clients {
+		clients[client] = struct{}{}
+	}
+	s.RUnlock()
+	delete(clients, sender)
 	for client := range clients {
-		if sender == client {
-			continue
-		}
 		select {
 		case client.msgBuffer <- msg:
 		default:
-			log.Print("unable to send message to ", client.name)
+			slog.Error("unable to send message to ", "err", client.name)
 		}
 	}
 }
 
-func (s *server) send(msg []byte, client *Client) {
+func (s *server) respond(msg []byte, client *Client) {
 	s.Lock()
+	defer s.Unlock()
 	_, ok := s.clients[client]
-	s.Unlock()
 	if !ok {
-		log.Print("attempted to send message to a nil client: ", client.name)
+		slog.Error("attempted to send message to a nil client: ", "client", client.name)
 		return
 	}
 	select {
 	case client.msgBuffer <- msg:
 	default:
-		log.Print("unable to send message to ", client.name)
+		slog.Error("unable to send message to ", "client", client.name)
 	}
 }
 
@@ -162,7 +174,7 @@ func (s *server) Receive(ctx context.Context, msg message) error {
 			if err != nil {
 				return err
 			}
-			s.send(newPayload, msg.sender)
+			s.respond(newPayload, msg.sender)
 		} else {
 			s.broadcast(msg.payload, msg.sender)
 		}

@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"database/sql"
 	"log"
 	"os"
 	"os/signal"
@@ -10,6 +9,7 @@ import (
 
 	"github.com/fsnotify/fsnotify"
 	"github.com/joho/godotenv"
+	"github.com/thesicktwist1/harmony/shared"
 
 	_ "github.com/tursodatabase/libsql-client-go/libsql"
 )
@@ -22,8 +22,7 @@ func main() {
 	if dbURL == "" {
 		log.Fatal("DATABASE_URL environment variable is not set")
 	}
-
-	db, err := sql.Open("libsql", dbURL)
+	db, err := shared.OpenWithGoose(dbURL, "libsql")
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -45,12 +44,14 @@ func main() {
 	go func() {
 		if err := c.Run(ctx); err != nil {
 			log.Fatal(err)
-			cancel()
 		}
+	}()
+
+	go func() {
 		sig := <-signalChan
 		cancel()
 		log.Printf("Received signal : %v. Shutting down...", sig)
 	}()
 	<-ctx.Done()
-
+	log.Print("Client successfully closed")
 }

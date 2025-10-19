@@ -4,6 +4,8 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
+	"fmt"
 )
 
 type EnvelopeType int
@@ -14,7 +16,28 @@ const (
 
 const (
 	Update = "UPDATE"
+	sep    = "/"
 )
+
+var (
+	ErrMalformedEvent   = errors.New("shared: malformed event")
+	ErrUnsupportedEvent = errors.New("shared : unsupported event")
+	ErrEmptyPath        = errors.New("shared : empty path")
+	ErrInvalidPath      = errors.New("shared: invalid path")
+)
+
+type EventError struct {
+	err  error
+	data any
+}
+
+func (e EventError) Error() string {
+	return fmt.Sprintf("%v : %+v", e.err, e.data)
+}
+
+func (e EventError) Unwrap() error {
+	return e.err
+}
 
 type Envelope struct {
 	Type    EnvelopeType `json:"type"`

@@ -17,7 +17,7 @@ VALUES (
     ?,
     ?,
     ?
-)ON CONFLICT(path) DO NOTHING
+)ON CONFLICT DO NOTHING
 `
 
 type CreateFileParams struct {

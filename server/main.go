@@ -2,13 +2,13 @@ package main
 
 import (
 	"context"
-	"database/sql"
 	"log"
 	"os"
 	"os/signal"
 	"syscall"
 
 	"github.com/joho/godotenv"
+	"github.com/thesicktwist1/harmony/shared"
 	_ "github.com/tursodatabase/libsql-client-go/libsql"
 )
 
@@ -20,12 +20,11 @@ func main() {
 	if dbURL == "" {
 		log.Fatal("DATABASE_URL environment variable is not set")
 	}
-	db, err := sql.Open("libsql", dbURL)
+	db, err := shared.OpenWithGoose(dbURL, "libsql", shared.WithReset())
 	if err != nil {
 		log.Fatal(err)
 	}
 	defer db.Close()
-
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
@@ -48,5 +47,4 @@ func main() {
 
 	log.Fatal(server.ListenAndServe())
 
-	log.Print("Server closed successfully.")
 }

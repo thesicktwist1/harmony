@@ -7,7 +7,6 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
-	"log"
 	"os"
 	"path/filepath"
 	"time"
@@ -26,12 +25,13 @@ type serverHub struct {
 }
 
 func NewServerHub(db *database.Queries) serverHub {
-	return serverHub{
-		DB: db,
-	}
+	return serverHub{DB: db}
 }
 
 func (s serverHub) Create(ctx context.Context, event *FileEvent) error {
+	if err := create(event); err != nil {
+		return err
+	}
 	if err := s.DB.CreateFile(ctx, database.CreateFileParams{
 		Path:      event.Path,
 		Hash:      event.Hash,
@@ -41,14 +41,14 @@ func (s serverHub) Create(ctx context.Context, event *FileEvent) error {
 	}); err != nil {
 		return err
 	}
-	if err := create(event); err != nil {
-		return err
-	}
 	return nil
 }
 
 func (s serverHub) Process(ctx context.Context, event *FileEvent) error {
-	log.Printf("Event: %s, Path: %s", event.Op, event.Path)
+	if event.Path == "" {
+		return EventError{err: ErrEmptyPath, data: event}
+	}
+	fmt.Printf("Processing event: %s, path: %s\n", event.Op, event.Path)
 	switch event.Op {
 	case fsnotify.Create.String():
 		return s.Create(ctx, event)
@@ -61,7 +61,7 @@ func (s serverHub) Process(ctx context.Context, event *FileEvent) error {
 	case Update:
 		return s.Update(ctx, event)
 	default:
-		return fmt.Errorf("TO DO")
+		return EventError{err: ErrUnsupportedEvent, data: event.Op}
 	}
 }
 
@@ -71,7 +71,7 @@ func (s serverHub) Update(ctx context.Context, event *FileEvent) error {
 		return err
 	}
 	if stat.IsDir() {
-		return fmt.Errorf("TO DO")
+		return ErrInvalidPath
 	}
 	data, err := os.ReadFile(event.Path)
 	if err != nil {
@@ -82,6 +82,22 @@ func (s serverHub) Update(ctx context.Context, event *FileEvent) error {
 }
 
 func (s serverHub) Rename(ctx context.Context, event *FileEvent) error {
+	stat, err := os.Stat(event.Path)
+	if err == nil {
+		if stat.IsDir() != event.IsDir {
+			return ErrMalformedEvent
+		}
+	} else {
+		return err
+	}
+	_, err = os.Stat(event.NewPath)
+	if err != nil {
+		if !errors.Is(err, os.ErrNotExist) {
+			return err
+		}
+	} else {
+		return os.ErrExist
+	}
 	if event.IsDir {
 		if err := s.renameDir(ctx, event); err != nil {
 			return err
@@ -226,7 +242,6 @@ func (s serverHub) Write(ctx context.Context, event *FileEvent) error {
 	}); err != nil {
 		return err
 	}
-	log.Print("Event: WRITE successful, Path: ", event.Path)
 	return nil
 }
 

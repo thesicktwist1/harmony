@@ -11,7 +11,7 @@ VALUES (
     ?,
     ?,
     ?
-)ON CONFLICT(path) DO NOTHING;
+)ON CONFLICT DO NOTHING;
 
 -- name: UpdateFile :exec 
 UPDATE files 
