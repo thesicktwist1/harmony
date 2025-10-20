@@ -6,6 +6,8 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+
+	"github.com/fsnotify/fsnotify"
 )
 
 type EnvelopeType int
@@ -16,14 +18,15 @@ const (
 
 const (
 	Update = "UPDATE"
-	sep    = "/"
 )
 
 var (
 	ErrMalformedEvent   = errors.New("shared: malformed event")
-	ErrUnsupportedEvent = errors.New("shared : unsupported event")
-	ErrEmptyPath        = errors.New("shared : empty path")
+	ErrUnsupportedEvent = errors.New("shared: unsupported event")
+	ErrEmptyPath        = errors.New("shared: empty path")
 	ErrInvalidPath      = errors.New("shared: invalid path")
+	ErrInvalidDest      = errors.New("shared: invalid destination ")
+	ErrBadExt           = errors.New("shared: bad extension")
 )
 
 type EventError struct {
@@ -68,4 +71,5 @@ func (f *FileEvent) New(data []byte) {
 	f.Data = data
 	newHash := sha256.Sum256(data)
 	f.Hash = hex.EncodeToString(newHash[:])
+	f.Op = fsnotify.Write.String()
 }

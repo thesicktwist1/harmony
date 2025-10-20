@@ -8,7 +8,9 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"path"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/fsnotify/fsnotify"
@@ -51,18 +53,29 @@ func (s serverHub) Process(ctx context.Context, event *FileEvent) error {
 	fmt.Printf("Processing event: %s, path: %s\n", event.Op, event.Path)
 	switch event.Op {
 	case fsnotify.Create.String():
-		return s.Create(ctx, event)
+		if err := s.Create(ctx, event); err != nil {
+			return EventError{err: err, data: event}
+		}
 	case fsnotify.Remove.String():
-		return s.Remove(ctx, event)
+		if err := s.Remove(ctx, event); err != nil {
+			return EventError{err: err, data: event}
+		}
 	case fsnotify.Rename.String():
-		return s.Rename(ctx, event)
+		if err := s.Rename(ctx, event); err != nil {
+			return EventError{err: err, data: event}
+		}
 	case fsnotify.Write.String():
-		return s.Write(ctx, event)
+		if err := s.Write(ctx, event); err != nil {
+			return EventError{err: err, data: event}
+		}
 	case Update:
-		return s.Update(ctx, event)
+		if err := s.Update(ctx, event); err != nil {
+			return EventError{err: err, data: event}
+		}
 	default:
 		return EventError{err: ErrUnsupportedEvent, data: event.Op}
 	}
+	return nil
 }
 
 func (s serverHub) Update(ctx context.Context, event *FileEvent) error {
@@ -82,13 +95,30 @@ func (s serverHub) Update(ctx context.Context, event *FileEvent) error {
 }
 
 func (s serverHub) Rename(ctx context.Context, event *FileEvent) error {
+	if event.NewPath == "" {
+		return ErrEmptyPath
+	}
+	rel, err := filepath.Rel(event.Path, event.NewPath)
+	if err == nil && !strings.HasPrefix(rel, "..") && rel != "." {
+		return ErrInvalidDest
+	}
+	if path.Ext(event.Path) != path.Ext(event.NewPath) {
+		return ErrBadExt
+	}
 	stat, err := os.Stat(event.Path)
-	if err == nil {
+	if err != nil {
+		return err
+	} else {
 		if stat.IsDir() != event.IsDir {
 			return ErrMalformedEvent
 		}
-	} else {
+	}
+	stat, err = os.Stat(path.Dir(event.NewPath))
+	if err != nil {
 		return err
+	}
+	if !stat.IsDir() {
+		return ErrInvalidDest
 	}
 	_, err = os.Stat(event.NewPath)
 	if err != nil {
@@ -111,7 +141,14 @@ func (s serverHub) Rename(ctx context.Context, event *FileEvent) error {
 }
 
 func (s serverHub) Remove(ctx context.Context, event *FileEvent) error {
-	if event.IsDir {
+	stat, err := os.Stat(event.Path)
+	if err != nil {
+		return err
+	}
+	if stat.IsDir() != event.IsDir {
+		return ErrMalformedEvent
+	}
+	if stat.IsDir() {
 		if err := s.removeDirFromDB(ctx, event.Path); err != nil {
 			return err
 		}
@@ -120,10 +157,7 @@ func (s serverHub) Remove(ctx context.Context, event *FileEvent) error {
 			return err
 		}
 	}
-	if err := remove(event); err != nil {
-		return err
-	}
-	return nil
+	return os.RemoveAll(event.Path)
 }
 
 func (s serverHub) removeDirFromDB(ctx context.Context, path string) error {
@@ -144,9 +178,7 @@ func (s serverHub) removeDirFromDB(ctx context.Context, path string) error {
 		}
 	}
 	if err := s.DB.DeleteFile(ctx, path); err != nil {
-		if !errors.Is(err, sql.ErrNoRows) {
-			return err
-		}
+		return err
 	}
 	return nil
 }

@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"os"
+	"path"
 )
 
 type Hub interface {
@@ -17,21 +18,14 @@ func write(event *FileEvent) error {
 	return os.WriteFile(event.Path, event.Data, 0777)
 }
 
-func remove(event *FileEvent) error {
-	if _, err := os.Stat(event.Path); err != nil {
-		if errors.Is(err, os.ErrNotExist) {
-			return nil
-		} else {
-			return err
+func create(event *FileEvent) error {
+	if stat, err := os.Stat(path.Dir(event.Path)); err == nil {
+		if !stat.IsDir() {
+			return ErrInvalidDest
 		}
-	}
-	if err := os.RemoveAll(event.Path); err != nil {
+	} else {
 		return err
 	}
-	return nil
-}
-
-func create(event *FileEvent) error {
 	if _, err := os.Stat(event.Path); err != nil {
 		if errors.Is(err, os.ErrNotExist) {
 			if event.IsDir {
