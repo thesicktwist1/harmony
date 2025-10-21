@@ -2,21 +2,15 @@ package shared
 
 import (
 	"context"
-	"errors"
 	"os"
-	"path"
 
 	"github.com/fsnotify/fsnotify"
 )
 
-type clientHub struct {
-	storage string
-}
+type clientHub struct{}
 
-func NewClientHub(storage string) clientHub {
-	return clientHub{
-		storage: storage,
-	}
+func NewClientHub() clientHub {
+	return clientHub{}
 }
 
 func (c clientHub) Process(ctx context.Context, event *FileEvent) error {
@@ -25,41 +19,28 @@ func (c clientHub) Process(ctx context.Context, event *FileEvent) error {
 	}
 	switch event.Op {
 	case fsnotify.Create.String():
-		return create(event)
+		if err := create(event); err != nil {
+			return EventError{err: err, data: event}
+		}
 	case fsnotify.Remove.String():
 		if err := os.RemoveAll(event.Path); err != nil {
 			return EventError{err: err, data: event}
 		}
 	case fsnotify.Rename.String():
-		if event.NewPath == "" {
-			return EventError{err: ErrEmptyPath, data: event}
-		}
-		stat, err := os.Stat(event.Path)
-		if err != nil {
+		if err := rename(event); err != nil {
 			return EventError{err: err, data: event}
-		}
-		if stat.IsDir() != event.IsDir {
-			return EventError{err: err, data: event}
-		}
-		stat, err = os.Stat(path.Dir(event.NewPath))
-		if err != nil {
-			return EventError{err: err, data: event}
-		}
-		if !stat.IsDir() {
-			return EventError{err: ErrInvalidPath, data: event.NewPath}
-		}
-		if _, err := os.Stat(event.NewPath); err != nil {
-			if !errors.Is(err, os.ErrNotExist) {
-				return EventError{err: err}
-			}
-		} else {
-			return EventError{err: os.ErrExist, data: event.NewPath}
 		}
 		if err := os.Rename(event.Path, event.NewPath); err != nil {
 			return EventError{err: err, data: event}
 		}
 	case fsnotify.Write.String():
-		return write(event)
+		if err := write(event); err != nil {
+			return EventError{err: err, data: event}
+		}
+	case Update:
+		if err := write(event); err != nil {
+			return EventError{err: err, data: event}
+		}
 	default:
 		return EventError{err: ErrUnsupportedEvent, data: event}
 	}

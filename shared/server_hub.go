@@ -8,9 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
-	"path"
 	"path/filepath"
-	"strings"
 	"time"
 
 	"github.com/fsnotify/fsnotify"
@@ -95,38 +93,8 @@ func (s serverHub) Update(ctx context.Context, event *FileEvent) error {
 }
 
 func (s serverHub) Rename(ctx context.Context, event *FileEvent) error {
-	if event.NewPath == "" {
-		return ErrEmptyPath
-	}
-	rel, err := filepath.Rel(event.Path, event.NewPath)
-	if err == nil && !strings.HasPrefix(rel, "..") && rel != "." {
-		return ErrInvalidDest
-	}
-	if path.Ext(event.Path) != path.Ext(event.NewPath) {
-		return ErrBadExt
-	}
-	stat, err := os.Stat(event.Path)
-	if err != nil {
+	if err := rename(event); err != nil {
 		return err
-	} else {
-		if stat.IsDir() != event.IsDir {
-			return ErrMalformedEvent
-		}
-	}
-	stat, err = os.Stat(path.Dir(event.NewPath))
-	if err != nil {
-		return err
-	}
-	if !stat.IsDir() {
-		return ErrInvalidDest
-	}
-	_, err = os.Stat(event.NewPath)
-	if err != nil {
-		if !errors.Is(err, os.ErrNotExist) {
-			return err
-		}
-	} else {
-		return os.ErrExist
 	}
 	if event.IsDir {
 		if err := s.renameDir(ctx, event); err != nil {
@@ -226,13 +194,10 @@ func (s serverHub) addFileToDB(ctx context.Context, path string) error {
 	if err != nil {
 		return err
 	}
-	newHash := sha256.New()
-	if _, err := newHash.Write(data); err != nil {
-		return err
-	}
+	newHash := sha256.Sum256(data)
 	if err := s.DB.CreateFile(ctx, database.CreateFileParams{
 		Path:      path,
-		Hash:      hex.EncodeToString(newHash.Sum(nil)),
+		Hash:      hex.EncodeToString(newHash[:]),
 		Updatedat: time.Now().Format(TimeLayout),
 		Createdat: time.Now().Format(TimeLayout),
 		Isdir:     false,
@@ -256,15 +221,7 @@ func (s serverHub) renameDir(ctx context.Context, event *FileEvent) error {
 }
 
 func (s serverHub) Write(ctx context.Context, event *FileEvent) error {
-	if _, err := os.Stat(event.Path); err != nil {
-		return err
-	}
-	file, err := os.Create(event.Path)
-	if err != nil {
-		return err
-	}
-	defer file.Close()
-	if _, err := file.Write(event.Data); err != nil {
+	if err := write(event); err != nil {
 		return err
 	}
 	if err := s.DB.UpdateFile(ctx, database.UpdateFileParams{

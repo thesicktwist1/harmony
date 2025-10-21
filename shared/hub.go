@@ -5,6 +5,8 @@ import (
 	"errors"
 	"os"
 	"path"
+	"path/filepath"
+	"strings"
 )
 
 type Hub interface {
@@ -12,10 +14,48 @@ type Hub interface {
 }
 
 func write(event *FileEvent) error {
-	if _, err := os.Stat(event.Path); err != nil {
+	stat, err := os.Stat(event.Path)
+	if err != nil {
 		return err
 	}
+	if stat.IsDir() {
+		return ErrMalformedEvent
+	}
 	return os.WriteFile(event.Path, event.Data, 0777)
+}
+
+func rename(event *FileEvent) error {
+	if event.NewPath == "" {
+		return ErrEmptyPath
+	}
+	rel, err := filepath.Rel(event.Path, event.NewPath)
+	if err == nil && !strings.HasPrefix(rel, "..") && rel != "." {
+		return ErrInvalidDest
+	}
+	stat, err := os.Stat(event.Path)
+	if err != nil {
+		return err
+	} else {
+		if stat.IsDir() != event.IsDir {
+			return ErrMalformedEvent
+		}
+	}
+	stat, err = os.Stat(path.Dir(event.NewPath))
+	if err != nil {
+		return err
+	}
+	if !stat.IsDir() {
+		return ErrInvalidDest
+	}
+	_, err = os.Stat(event.NewPath)
+	if err != nil {
+		if !errors.Is(err, os.ErrNotExist) {
+			return err
+		}
+	} else {
+		return os.ErrExist
+	}
+	return nil
 }
 
 func create(event *FileEvent) error {
@@ -33,11 +73,9 @@ func create(event *FileEvent) error {
 					return err
 				}
 			} else {
-				file, err := os.Create(event.Path)
-				if err != nil {
+				if _, err := os.Create(event.Path); err != nil {
 					return err
 				}
-				file.Close()
 			}
 		} else {
 			return err
