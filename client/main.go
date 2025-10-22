@@ -10,7 +10,6 @@ import (
 	"github.com/fsnotify/fsnotify"
 	"github.com/joho/godotenv"
 	"github.com/thesicktwist1/harmony/shared"
-
 	_ "github.com/tursodatabase/libsql-client-go/libsql"
 )
 
@@ -22,7 +21,7 @@ func main() {
 	if dbURL == "" {
 		log.Fatal("DATABASE_URL environment variable is not set")
 	}
-	db, err := shared.OpenWithGoose(dbURL, "libsql")
+	db, err := shared.OpenDB(dbURL, "libsql")
 	if err != nil {
 		log.Fatal(err)
 	}

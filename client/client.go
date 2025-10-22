@@ -26,6 +26,7 @@ type client struct {
 func newClient(watcher *fsnotify.Watcher, db *sql.DB) *client {
 	return &client{
 		registry: newRegistry(watcher, database.New(db)),
+		Hub:      shared.NewClientHub(),
 	}
 }
 
@@ -48,7 +49,7 @@ func (c *client) Run(ctx context.Context) error {
 			return err
 		}
 	}
-	if err := c.registry.addDir(storage); err != nil {
+	if err := c.registry.appendDir(storage); err != nil {
 		return err
 	}
 	conn, err := c.Connect(ctx)

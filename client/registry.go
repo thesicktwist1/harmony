@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"log/slog"
 	"math"
 	"os"
 	"path/filepath"
@@ -18,8 +19,13 @@ import (
 	"time"
 
 	"github.com/fsnotify/fsnotify"
+
 	"github.com/thesicktwist1/harmony/shared"
 	"github.com/thesicktwist1/harmony/shared/database"
+)
+
+var (
+	ErrNotExist = errors.New("registry: path doesn't exist")
 )
 
 const (
@@ -71,21 +77,22 @@ func newDirectory(name, path string) *directory {
 	}
 }
 
-func (r *registry) addDir(path string) error {
+func (r *registry) appendDir(path string) error {
 	dir := newDirectory(filepath.Base(path), path)
 	childs, err := os.ReadDir(path)
 	if err != nil {
 		return err
 	}
 	for _, child := range childs {
-		newPath := filepath.Join(path, child.Name())
 		if child.IsDir() {
-			if err := r.addDir(newPath); err != nil {
+			newPath := filepath.Join(path, child.Name())
+			if err := r.appendDir(newPath); err != nil {
 				return err
 			}
 			dir.childs[newPath] = struct{}{}
 		}
 	}
+
 	r.Lock()
 	r.watchedDir[path] = dir
 	r.Unlock()
@@ -98,20 +105,23 @@ func (r *registry) addDir(path string) error {
 
 func (r *registry) removeDir(path string) error {
 	r.Lock()
-	dic, exists := r.watchedDir[path]
-	if !exists {
+	dic, exist := r.watchedDir[path]
+	if !exist {
 		r.Unlock()
-		return nil
+		return ErrNotExist
 	}
 	r.Unlock()
-	for name := range dic.childs {
-		if err := r.removeDir(name); err != nil {
+
+	for child := range dic.childs {
+		if err := r.removeDir(child); err != nil {
 			return err
 		}
 	}
+
 	r.Lock()
 	delete(r.watchedDir, path)
 	r.Unlock()
+
 	log.Printf("%v directory removed from the watchlist\n", filepath.Base(path))
 	return nil
 }
@@ -140,17 +150,17 @@ func (r *registry) ListenForEvents(ctx context.Context) {
 			if event.Has(fsnotify.Write) {
 				stat, err := os.Stat(event.Name)
 				if err != nil {
-					log.Print(err)
+					slog.Error("error getting fileinfo", "err", err)
 					return
 				}
 				if stat.IsDir() {
-					// Write on directory is a dirty
-					// event we just return
+					// Write on directory is a
+					// dirty event we just return
 					return
 				}
 			}
 			if err := r.Receive(event, ctx); err != nil {
-				log.Print(err)
+				slog.Error("registry receive error", "err", err)
 			}
 		}
 	)
@@ -160,7 +170,8 @@ func (r *registry) ListenForEvents(ctx context.Context) {
 			if !ok {
 				return
 			}
-			r.HandleErrors(err)
+			slog.Error("fsnotify watcher error", "err", err)
+
 		case event, ok := <-r.watcher.Events:
 			if !ok {
 				return
@@ -198,7 +209,7 @@ func (r *registry) Receive(event fsnotify.Event, ctx context.Context) error {
 			return err
 		}
 		if stat.IsDir() {
-			if err := r.addDir(event.Name); err != nil {
+			if err := r.appendDir(event.Name); err != nil {
 				return err
 			}
 			if err := r.handleDir(ctx, event); err != nil {
@@ -245,16 +256,11 @@ func (r *registry) handleRename(ctx context.Context, e fsnotify.Event) error {
 		return err
 	}
 	if stat.IsDir() {
-		if err := r.addDir(e.Name); err != nil {
+		if err := r.appendDir(e.Name); err != nil {
 			return err
 		}
 	}
 	return nil
-}
-
-func (r *registry) HandleErrors(err error) {
-	log.Print(err)
-	// TODO: error handling
 }
 
 func (r *registry) isDir(path string) bool {
@@ -291,6 +297,11 @@ func (r *registry) handleFile(ctx context.Context, e fsnotify.Event) error {
 	if err != nil {
 		if !errors.Is(err, sql.ErrNoRows) {
 			return err
+		} else {
+			return r.broadcastEvent(&shared.FileEvent{
+				Path: e.Name,
+				Op:   fsnotify.Create.String(),
+			})
 		}
 	} else {
 		exists = true
@@ -313,7 +324,7 @@ func (r *registry) handleFile(ctx context.Context, e fsnotify.Event) error {
 	timestamp := stat.ModTime()
 	f := &shared.FileEvent{
 		Path: e.Name,
-		Hash: hash,
+		Op:   fsnotify.Write.String(),
 	}
 	if exists {
 		updatedAt, err := time.Parse(shared.TimeLayout, fileinfo.Updatedat)
@@ -323,7 +334,7 @@ func (r *registry) handleFile(ctx context.Context, e fsnotify.Event) error {
 		if fileinfo.Hash != hash {
 			if timestamp.After(updatedAt) {
 				f.Data = data
-				f.Op = e.Op.String()
+				f.Hash = hash
 			} else {
 				f.Op = shared.Update
 			}
@@ -348,7 +359,7 @@ func (r *registry) handleDir(ctx context.Context, e fsnotify.Event) error {
 		} else {
 			f := &shared.FileEvent{
 				Path:  e.Name,
-				Op:    e.Op.String(),
+				Op:    fsnotify.Create.String(),
 				IsDir: true,
 			}
 			if err := r.broadcastEvent(f); err != nil {
