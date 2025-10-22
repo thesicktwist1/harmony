@@ -69,13 +69,9 @@ func create(event *FileEvent) error {
 	if _, err := os.Stat(event.Path); err != nil {
 		if errors.Is(err, os.ErrNotExist) {
 			if event.IsDir {
-				if err := os.Mkdir(event.Path, perm); err != nil {
-					return err
-				}
+				return os.Mkdir(event.Path, perm)
 			} else {
-				if _, err := os.Create(event.Path); err != nil {
-					return err
-				}
+				return os.WriteFile(event.Path, event.Data, perm)
 			}
 		} else {
 			return err
@@ -83,5 +79,4 @@ func create(event *FileEvent) error {
 	} else {
 		return os.ErrExist
 	}
-	return nil
 }

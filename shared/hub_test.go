@@ -43,7 +43,8 @@ func makeDB(dbPath, driverName string) (*database.Queries, error) {
 	}
 	return database.New(db), nil
 }
-func initTmp(tmp string, db *database.Queries) error {
+
+func initTMP(tmp string, db *database.Queries) error {
 	ctx := context.Background()
 	if err := os.Chdir(tmp); err != nil {
 		return err
@@ -158,7 +159,7 @@ func TestServerHubCreateEvent(t *testing.T) {
 		server := NewServerHub(db)
 		ctx := context.Background()
 
-		err = initTmp(tmp, db)
+		err = initTMP(tmp, db)
 		require.NoError(t, err)
 
 		err = os.Chdir(tmp)
@@ -361,7 +362,7 @@ func TestServerHubRenameEvent(t *testing.T) {
 		server := NewServerHub(db)
 		ctx := context.Background()
 
-		err = initTmp(tmp, db)
+		err = initTMP(tmp, db)
 		require.NoError(t, err)
 
 		err = os.Chdir(tmp)
@@ -470,7 +471,7 @@ func TestServerHubRemoveEvent(t *testing.T) {
 		server := NewServerHub(db)
 		ctx := context.Background()
 
-		err = initTmp(tmp, db)
+		err = initTMP(tmp, db)
 		require.NoError(t, err)
 
 		err = os.Chdir(tmp)
@@ -563,7 +564,7 @@ func TestServerHubWriteEvent(t *testing.T) {
 		server := NewServerHub(db)
 		ctx := context.Background()
 
-		err = initTmp(tmp, db)
+		err = initTMP(tmp, db)
 		require.NoError(t, err)
 
 		err = os.Chdir(tmp)
@@ -650,7 +651,7 @@ func TestServerHubUpdateEvent(t *testing.T) {
 		server := NewServerHub(db)
 		ctx := context.Background()
 
-		err = initTmp(tmp, db)
+		err = initTMP(tmp, db)
 		require.NoError(t, err)
 
 		err = os.Chdir(tmp)
@@ -733,7 +734,7 @@ func TestClientHubUpdate(t *testing.T) {
 		var (
 			tmp = t.TempDir()
 		)
-		err := initTmp(tmp, nil)
+		err := initTMP(tmp, nil)
 		require.NoError(t, err)
 
 		err = os.Chdir(tmp)

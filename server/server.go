@@ -141,7 +141,7 @@ func (s *server) respond(msg []byte, client *Client) {
 	defer s.Unlock()
 	_, ok := s.clients[client]
 	if !ok {
-		slog.Error("attempted to send message to a nil client: ", "client", client.name)
+		slog.Error("impossible to reach client: ", "client", client.name)
 		return
 	}
 	select {

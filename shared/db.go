@@ -4,7 +4,6 @@ import (
 	"database/sql"
 
 	"github.com/pressly/goose/v3"
-	_ "github.com/tursodatabase/go-libsql"
 )
 
 const (
@@ -22,7 +21,7 @@ func WithReset() optsFunc {
 	}
 }
 
-func OpenWithGoose(dbURL string, driverName string, opts ...optsFunc) (*sql.DB, error) {
+func OpenWithGoose(dbURL, driverName string, opts ...optsFunc) (*sql.DB, error) {
 	db, err := sql.Open(driverName, dbURL)
 	if err != nil {
 		return nil, err
@@ -36,6 +35,17 @@ func OpenWithGoose(dbURL string, driverName string, opts ...optsFunc) (*sql.DB, 
 		}
 	}
 	if err := goose.Up(db, schema); err != nil {
+		return nil, err
+	}
+	return db, nil
+}
+
+func OpenDB(dbURL, driverName string) (*sql.DB, error) {
+	db, err := sql.Open(driverName, dbURL)
+	if err != nil {
+		return nil, err
+	}
+	if err := goose.SetDialect("sqlite3"); err != nil {
 		return nil, err
 	}
 	return db, nil
