@@ -18,6 +18,8 @@ import (
 const (
 	TimeLayout = "2006-01-02 15:04:05.999999999 -0700 MST"
 	perm       = 0777
+	storage    = "storage"
+	sep        = "/"
 )
 
 type serverHub struct {
@@ -45,8 +47,8 @@ func (s serverHub) Create(ctx context.Context, event *FileEvent) error {
 }
 
 func (s serverHub) Process(ctx context.Context, event *FileEvent) error {
-	if event.Path == "" {
-		return EventError{err: ErrEmptyPath, data: event}
+	if err := isValidPath(event.Path); err != nil {
+		return EventError{err: err, data: event}
 	}
 	fmt.Printf("Processing event: %s, path: %s\n", event.Op, event.Path)
 	switch event.Op {

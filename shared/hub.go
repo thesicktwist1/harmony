@@ -24,6 +24,17 @@ func write(event *FileEvent) error {
 	return os.WriteFile(event.Path, event.Data, 0777)
 }
 
+func isValidPath(p string) error {
+	if p == "" {
+		return ErrEmptyPath
+	}
+	cleanPath := path.Clean(p)
+	if strings.Split(cleanPath, sep)[0] != storage {
+		return ErrInvalidPath
+	}
+	return nil
+}
+
 func rename(event *FileEvent) error {
 	if event.NewPath == "" {
 		return ErrEmptyPath

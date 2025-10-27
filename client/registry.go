@@ -12,6 +12,7 @@ import (
 	"log/slog"
 	"math"
 	"os"
+	"path"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -29,6 +30,7 @@ var (
 
 const (
 	storage    = "storage"
+	backup     = "backup"
 	bufferSize = 32
 )
 
@@ -369,7 +371,7 @@ func (r *registry) handleDir(ctx context.Context, e fsnotify.Event) error {
 		return err
 	}
 	for _, child := range childs {
-		childPath := filepath.Join(e.Name, child.Name())
+		childPath := path.Join(e.Name, child.Name())
 		if !child.IsDir() {
 			if err := r.handleFile(ctx, fsnotify.Event{
 				Name: childPath,
@@ -399,10 +401,5 @@ func (r *registry) broadcastEvent(event *shared.FileEvent) error {
 	default:
 		return fmt.Errorf("unable to reach message buffer")
 	}
-	return nil
-}
-
-func (r *registry) Sync(ctx context.Context, path string) error {
-
 	return nil
 }

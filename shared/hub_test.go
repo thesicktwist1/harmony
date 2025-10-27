@@ -17,17 +17,17 @@ import (
 )
 
 var paths = map[string]bool{
-	"dir-1":                        true,
-	path.Join("dir-1", "subdir-1"): true,
-	path.Join("dir-1", "subdir-1", "file-4.txt"): false,
-	path.Join("dir-1", "subdir-1", "file-3.txt"): false,
-	path.Join("dir-1", "file-1.txt"):             false,
-	"dir-2":                                      true,
-	path.Join("dir-2", "subdir-2"):               true,
-	path.Join("dir-2", "file-2.txt"):             false,
-	"dir-3":                                      true,
-	path.Join("dir-3", "subdir-3"):               true,
-	path.Join("dir-3", "subdir-3", "file-3.txt"): false,
+	path.Join(storage, "dir-1"):                           true,
+	path.Join(storage, "dir-1", "subdir-1"):               true,
+	path.Join(storage, "dir-1", "subdir-1", "file-4.txt"): false,
+	path.Join(storage, "dir-1", "subdir-1", "file-3.txt"): false,
+	path.Join(storage, "dir-1", "file-1.txt"):             false,
+	path.Join(storage, "dir-2"):                           true,
+	path.Join(storage, "dir-2", "subdir-2"):               true,
+	path.Join(storage, "dir-2", "file-2.txt"):             false,
+	path.Join(storage, "dir-3"):                           true,
+	path.Join(storage, "dir-3", "subdir-3"):               true,
+	path.Join(storage, "dir-3", "subdir-3", "file-3.txt"): false,
 }
 
 func makeDB(dbPath, driverName string) (*database.Queries, error) {
@@ -44,11 +44,8 @@ func makeDB(dbPath, driverName string) (*database.Queries, error) {
 	return database.New(db), nil
 }
 
-func initTMP(tmp string, db *database.Queries) error {
+func initTMP(db *database.Queries) error {
 	ctx := context.Background()
-	if err := os.Chdir(tmp); err != nil {
-		return err
-	}
 	for p, isDir := range paths {
 		if isDir {
 			if err := os.MkdirAll(p, 0777); err != nil {
@@ -97,29 +94,29 @@ func TestServerHubCreateEvent(t *testing.T) {
 		{
 			name: "create directory",
 			event: &FileEvent{
-				Path:  path.Join("dir-1", "created-dir"),
+				Path:  path.Join(storage, "dir-1", "created-dir"),
 				Op:    fsnotify.Create.String(),
 				IsDir: true,
 			},
 			wantExists: map[string]bool{
-				path.Join("dir-1", "created-dir"): true,
+				path.Join(storage, "dir-1", "created-dir"): true,
 			},
 		},
 		{
 			name: "create file",
 			event: &FileEvent{
-				Path:  path.Join("dir-1", "created-file.go"),
+				Path:  path.Join(storage, "dir-1", "created-file.go"),
 				Op:    fsnotify.Create.String(),
 				IsDir: false,
 			},
 			wantExists: map[string]bool{
-				path.Join("dir-1", "created-file.go"): false,
+				path.Join(storage, "dir-1", "created-file.go"): false,
 			},
 		},
 		{
 			name: "invalid parent (not a directory)",
 			event: &FileEvent{
-				Path:  path.Join("dir-1", "file-1.txt", "created-file.go"),
+				Path:  path.Join(storage, "dir-1", "file-1.txt", "created-file.go"),
 				Op:    fsnotify.Create.String(),
 				IsDir: false,
 			},
@@ -129,7 +126,7 @@ func TestServerHubCreateEvent(t *testing.T) {
 		{
 			name: "invalid parent (doesn't exists)",
 			event: &FileEvent{
-				Path:  path.Join("not exist", "created-file.go"),
+				Path:  path.Join(storage, "not exist", "created-file.go"),
 				Op:    fsnotify.Create.String(),
 				IsDir: false,
 			},
@@ -139,12 +136,30 @@ func TestServerHubCreateEvent(t *testing.T) {
 		{
 			name: "invalid create (already exists)",
 			event: &FileEvent{
-				Path:  path.Join("dir-1", "file-1.txt"),
+				Path:  path.Join(storage, "dir-1", "file-1.txt"),
 				Op:    fsnotify.Create.String(),
 				IsDir: false,
 			},
 			wantErr: true,
 			errType: os.ErrExist,
+		}, {
+			name: "invalid create (already exists)",
+			event: &FileEvent{
+				Path:  path.Join(storage, "dir-1", "file-1.txt"),
+				Op:    fsnotify.Create.String(),
+				IsDir: false,
+			},
+			wantErr: true,
+			errType: os.ErrExist,
+		}, {
+			name: "invalid (top directory doesn't match)",
+			event: &FileEvent{
+				Path:  path.Join("other", "dir-1", "file-1.txt"),
+				Op:    fsnotify.Create.String(),
+				IsDir: false,
+			},
+			wantErr: true,
+			errType: ErrInvalidPath,
 		},
 	}
 	for _, tc := range tests {
@@ -159,10 +174,10 @@ func TestServerHubCreateEvent(t *testing.T) {
 		server := NewServerHub(db)
 		ctx := context.Background()
 
-		err = initTMP(tmp, db)
+		err = os.Chdir(tmp)
 		require.NoError(t, err)
 
-		err = os.Chdir(tmp)
+		err = initTMP(db)
 		require.NoError(t, err)
 
 		err = server.Process(ctx, tc.event)
@@ -217,43 +232,43 @@ func TestServerHubRenameEvent(t *testing.T) {
 		{
 			name: "rename (subdir-1)",
 			event: &FileEvent{
-				Path:    path.Join("dir-1", "subdir-1"),
-				NewPath: path.Join("dir-1", "subdir-1-renamed"),
+				Path:    path.Join(storage, "dir-1", "subdir-1"),
+				NewPath: path.Join(storage, "dir-1", "subdir-1-renamed"),
 				Op:      fsnotify.Rename.String(),
 				IsDir:   true,
 			},
 			wantExists: map[string]bool{
-				path.Join("dir-1", "subdir-1-renamed"):               true,
-				path.Join("dir-1", "subdir-1-renamed", "file-4.txt"): false,
+				path.Join(storage, "dir-1", "subdir-1-renamed"):               true,
+				path.Join(storage, "dir-1", "subdir-1-renamed", "file-4.txt"): false,
 			},
 			wantNotExists: []string{
-				path.Join("dir-1", "subdir-1"),
-				path.Join("dir-1", "subdir-1", "file-4.txt"),
+				path.Join(storage, "dir-1", "subdir-1"),
+				path.Join(storage, "dir-1", "subdir-1", "file-4.txt"),
 			},
 		},
 		{
 			name: "move (dir-2 to subdir-3)",
 			event: &FileEvent{
-				Path:    path.Join("dir-2"),
-				NewPath: path.Join("dir-3", "subdir-3", "dir-2"),
+				Path:    path.Join(storage, "dir-2"),
+				NewPath: path.Join(storage, "dir-3", "subdir-3", "dir-2"),
 				Op:      fsnotify.Rename.String(),
 				IsDir:   true,
 			},
 			wantExists: map[string]bool{
-				path.Join("dir-3", "subdir-3", "dir-2"):             true,
-				path.Join("dir-3", "subdir-3", "dir-2", "subdir-2"): true,
+				path.Join(storage, "dir-3", "subdir-3", "dir-2"):             true,
+				path.Join(storage, "dir-3", "subdir-3", "dir-2", "subdir-2"): true,
 			},
 			wantNotExists: []string{
-				path.Join("dir-2"),
-				path.Join("dir-2", "subdir-2"),
-				path.Join("dir-2", "file-2.txt"),
+				path.Join(storage, "dir-2"),
+				path.Join(storage, "dir-2", "subdir-2"),
+				path.Join(storage, "dir-2", "file-2.txt"),
 			},
 		},
 		{
 			name: "self move (dir-3 to subdir-3)",
 			event: &FileEvent{
-				Path:    path.Join("dir-3"),
-				NewPath: path.Join("dir-3", "subdir-3", "dir-3"),
+				Path:    path.Join(storage, "dir-3"),
+				NewPath: path.Join(storage, "dir-3", "subdir-3", "dir-3"),
 				Op:      fsnotify.Rename.String(),
 				IsDir:   true,
 			},
@@ -263,7 +278,7 @@ func TestServerHubRenameEvent(t *testing.T) {
 		{
 			name: "empty new path ",
 			event: &FileEvent{
-				Path:    path.Join("dir-3"),
+				Path:    path.Join(storage, "dir-3"),
 				NewPath: "",
 				Op:      fsnotify.Rename.String(),
 				IsDir:   true,
@@ -274,8 +289,8 @@ func TestServerHubRenameEvent(t *testing.T) {
 		{
 			name: "moving a file to an already existing path",
 			event: &FileEvent{
-				Path:    path.Join("dir-3", "subdir-3", "file-3.txt"),
-				NewPath: path.Join("dir-1", "subdir-1", "file-3.txt"),
+				Path:    path.Join(storage, "dir-3", "subdir-3", "file-3.txt"),
+				NewPath: path.Join(storage, "dir-1", "subdir-1", "file-3.txt"),
 				Op:      fsnotify.Rename.String(),
 			},
 			wantErr: true,
@@ -285,22 +300,22 @@ func TestServerHubRenameEvent(t *testing.T) {
 		{
 			name: "renaming file",
 			event: &FileEvent{
-				Path:    path.Join("dir-3", "subdir-3", "file-3.txt"),
-				NewPath: path.Join("dir-3", "subdir-3", "file-renamed.txt"),
+				Path:    path.Join(storage, "dir-3", "subdir-3", "file-3.txt"),
+				NewPath: path.Join(storage, "dir-3", "subdir-3", "file-renamed.txt"),
 				Op:      fsnotify.Rename.String(),
 			},
 			wantExists: map[string]bool{
-				path.Join("dir-3", "subdir-3", "file-renamed.txt"): false,
+				path.Join(storage, "dir-3", "subdir-3", "file-renamed.txt"): false,
 			},
 			wantNotExists: []string{
-				path.Join("dir-3", "subdir-3", "file-3.txt"),
+				path.Join(storage, "dir-3", "subdir-3", "file-3.txt"),
 			},
 		},
 		{
 			name: "renaming to a none directory parent",
 			event: &FileEvent{
-				Path:    path.Join("dir-1"),
-				NewPath: path.Join("dir-3", "subdir-3", "file-3.txt", "dir-1"),
+				Path:    path.Join(storage, "dir-1"),
+				NewPath: path.Join(storage, "dir-3", "subdir-3", "file-3.txt", "dir-1"),
 				Op:      fsnotify.Rename.String(),
 				IsDir:   true,
 			},
@@ -310,8 +325,8 @@ func TestServerHubRenameEvent(t *testing.T) {
 		{
 			name: "malformed event (file type doesn't match)",
 			event: &FileEvent{
-				Path:    path.Join("dir-1"),
-				NewPath: path.Join("dir-3", "dir-1"),
+				Path:    path.Join(storage, "dir-1"),
+				NewPath: path.Join(storage, "dir-3", "dir-1"),
 				Op:      fsnotify.Rename.String(),
 				IsDir:   false,
 			},
@@ -321,8 +336,8 @@ func TestServerHubRenameEvent(t *testing.T) {
 		{
 			name: "moving to invalid parent ",
 			event: &FileEvent{
-				Path:    path.Join("dir-1"),
-				NewPath: path.Join("invalid-parent", "dir-1"),
+				Path:    path.Join(storage, "dir-1"),
+				NewPath: path.Join(storage, "invalid-parent", "dir-1"),
 				Op:      fsnotify.Rename.String(),
 				IsDir:   true,
 			},
@@ -332,8 +347,8 @@ func TestServerHubRenameEvent(t *testing.T) {
 		{
 			name: "moving invalid file ",
 			event: &FileEvent{
-				Path:    path.Join("invalid.txt"),
-				NewPath: path.Join("dir-1", "invalid.txt"),
+				Path:    path.Join(storage, "invalid.txt"),
+				NewPath: path.Join(storage, "dir-1", "invalid.txt"),
 				Op:      fsnotify.Rename.String(),
 			},
 			wantErr: true,
@@ -343,7 +358,7 @@ func TestServerHubRenameEvent(t *testing.T) {
 			name: "empty path ",
 			event: &FileEvent{
 				Path:    "",
-				NewPath: path.Join("dir-1", "invalid.txt"),
+				NewPath: path.Join(storage, "dir-1", "invalid.txt"),
 				Op:      fsnotify.Rename.String(),
 			},
 			wantErr: true,
@@ -362,10 +377,10 @@ func TestServerHubRenameEvent(t *testing.T) {
 		server := NewServerHub(db)
 		ctx := context.Background()
 
-		err = initTMP(tmp, db)
+		err = os.Chdir(tmp)
 		require.NoError(t, err)
 
-		err = os.Chdir(tmp)
+		err = initTMP(db)
 		require.NoError(t, err)
 
 		err = server.Process(ctx, tc.event)
@@ -416,31 +431,31 @@ func TestServerHubRemoveEvent(t *testing.T) {
 		{
 			name: "remove directory",
 			event: &FileEvent{
-				Path:  "dir-1",
+				Path:  path.Join(storage, "dir-1"),
 				Op:    fsnotify.Remove.String(),
 				IsDir: true,
 			},
 			wantNotExists: []string{
 				"dir-1",
-				path.Join("dir-1", "file-1.txt"),
-				path.Join("dir-1", "subdir-1", "file-3.txt"),
-				path.Join("dir-1", "subdir-1", "file-4.txt"),
-				path.Join("dir-1", "subdir-1"),
+				path.Join(storage, "dir-1", "file-1.txt"),
+				path.Join(storage, "dir-1", "subdir-1", "file-3.txt"),
+				path.Join(storage, "dir-1", "subdir-1", "file-4.txt"),
+				path.Join(storage, "dir-1", "subdir-1"),
 			},
 		},
 		{
 			name: "remove file",
 			event: &FileEvent{
-				Path:  path.Join("dir-1", "file-1.txt"),
+				Path:  path.Join(storage, "dir-1", "file-1.txt"),
 				Op:    fsnotify.Remove.String(),
 				IsDir: false,
 			},
-			wantNotExists: []string{path.Join("dir-1", "file-1.txt")},
+			wantNotExists: []string{path.Join(storage, "dir-1", "file-1.txt")},
 		},
 		{
 			name: "file already removed or doesn't exists",
 			event: &FileEvent{
-				Path:  path.Join("dir-1", "not_exists.txt"),
+				Path:  path.Join(storage, "dir-1", "not_exists.txt"),
 				Op:    fsnotify.Remove.String(),
 				IsDir: false,
 			},
@@ -450,7 +465,7 @@ func TestServerHubRemoveEvent(t *testing.T) {
 		{
 			name: "malformed event (doesn't match file type)",
 			event: &FileEvent{
-				Path:  path.Join("dir-1", "file-1.txt"),
+				Path:  path.Join(storage, "dir-1", "file-1.txt"),
 				Op:    fsnotify.Remove.String(),
 				IsDir: true,
 			},
@@ -471,10 +486,10 @@ func TestServerHubRemoveEvent(t *testing.T) {
 		server := NewServerHub(db)
 		ctx := context.Background()
 
-		err = initTMP(tmp, db)
+		err = os.Chdir(tmp)
 		require.NoError(t, err)
 
-		err = os.Chdir(tmp)
+		err = initTMP(db)
 		require.NoError(t, err)
 
 		err = server.Process(ctx, tc.event)
@@ -514,7 +529,7 @@ func TestServerHubWriteEvent(t *testing.T) {
 		{
 			name: "write",
 			event: &FileEvent{
-				Path: path.Join("dir-1", "file-1.txt"),
+				Path: path.Join(storage, "dir-1", "file-1.txt"),
 				Op:   fsnotify.Write.String(),
 				Data: []byte("new data"),
 				Hash: "hash",
@@ -525,7 +540,7 @@ func TestServerHubWriteEvent(t *testing.T) {
 		{
 			name: "writing to a directory",
 			event: &FileEvent{
-				Path: path.Join("dir-1"),
+				Path: path.Join(storage, "dir-1"),
 				Op:   fsnotify.Write.String(),
 				Data: []byte("new data"),
 				Hash: "hash",
@@ -536,7 +551,7 @@ func TestServerHubWriteEvent(t *testing.T) {
 		{
 			name: "write to unknown file",
 			event: &FileEvent{
-				Path: path.Join("dir-1", "invalid.txt"),
+				Path: path.Join(storage, "dir-1", "invalid.txt"),
 				Op:   fsnotify.Write.String(),
 			},
 			wantErr: true,
@@ -545,7 +560,7 @@ func TestServerHubWriteEvent(t *testing.T) {
 		{
 			name: "unsupported event",
 			event: &FileEvent{
-				Path: path.Join("dir-1", "invalid.txt"),
+				Path: path.Join(storage, "dir-1", "invalid.txt"),
 				Op:   "unsupported",
 			},
 			wantErr: true,
@@ -564,10 +579,10 @@ func TestServerHubWriteEvent(t *testing.T) {
 		server := NewServerHub(db)
 		ctx := context.Background()
 
-		err = initTMP(tmp, db)
+		err = os.Chdir(tmp)
 		require.NoError(t, err)
 
-		err = os.Chdir(tmp)
+		err = initTMP(db)
 		require.NoError(t, err)
 
 		err = server.Process(ctx, tc.event)
@@ -611,19 +626,19 @@ func TestServerHubUpdateEvent(t *testing.T) {
 		{
 			name: "update existing file",
 			event: &FileEvent{
-				Path: path.Join("dir-1", "file-1.txt"),
+				Path: path.Join(storage, "dir-1", "file-1.txt"),
 				Op:   Update,
 			},
 			wantEvent: &FileEvent{
-				Path: path.Join("dir-1", "file-1.txt"),
+				Path: path.Join(storage, "dir-1", "file-1.txt"),
 				Op:   Update,
-				Data: []byte(path.Join("dir-1", "file-1.txt")),
+				Data: []byte(path.Join(storage, "dir-1", "file-1.txt")),
 			},
 		},
 		{
 			name: "update unknown file",
 			event: &FileEvent{
-				Path: path.Join("dir-1", "invalid.txt"),
+				Path: path.Join(storage, "dir-1", "invalid.txt"),
 				Op:   Update,
 			},
 			wantErr: true,
@@ -632,7 +647,7 @@ func TestServerHubUpdateEvent(t *testing.T) {
 		{
 			name: "updating a directory",
 			event: &FileEvent{
-				Path: "dir-1",
+				Path: path.Join(storage, "dir-1"),
 				Op:   Update,
 			},
 			wantErr: true,
@@ -651,10 +666,10 @@ func TestServerHubUpdateEvent(t *testing.T) {
 		server := NewServerHub(db)
 		ctx := context.Background()
 
-		err = initTMP(tmp, db)
+		err = os.Chdir(tmp)
 		require.NoError(t, err)
 
-		err = os.Chdir(tmp)
+		err = initTMP(db)
 		require.NoError(t, err)
 
 		err = server.Process(ctx, tc.event)
@@ -695,7 +710,7 @@ func TestClientHubUpdate(t *testing.T) {
 		{
 			name: "update (existing file)",
 			event: &FileEvent{
-				Path: path.Join("dir-1", "file-1.txt"),
+				Path: path.Join(storage, "dir-1", "file-1.txt"),
 				Op:   Update,
 				Data: []byte("123"),
 			},
@@ -704,7 +719,7 @@ func TestClientHubUpdate(t *testing.T) {
 		{
 			name: "update (empty path)",
 			event: &FileEvent{
-				Path: path.Join(""),
+				Path: "",
 				Op:   Update,
 				Data: []byte("123"),
 			},
@@ -714,7 +729,7 @@ func TestClientHubUpdate(t *testing.T) {
 		{
 			name: "invalid update (file doesn't exists)",
 			event: &FileEvent{
-				Path: path.Join("dir-1", "invalid.txt"),
+				Path: path.Join(storage, "dir-1", "invalid.txt"),
 				Op:   Update,
 			},
 			wantErr: true,
@@ -723,7 +738,7 @@ func TestClientHubUpdate(t *testing.T) {
 		{
 			name: "invalid update (trying to update a directory)",
 			event: &FileEvent{
-				Path: path.Join("dir-1"),
+				Path: path.Join(storage, "dir-1"),
 				Op:   Update,
 			},
 			wantErr: true,
@@ -734,27 +749,28 @@ func TestClientHubUpdate(t *testing.T) {
 		var (
 			tmp = t.TempDir()
 		)
-		err := initTMP(tmp, nil)
-		require.NoError(t, err)
 
 		err = os.Chdir(tmp)
+		require.NoError(t, err)
+
+		err = initTMP(nil)
 		require.NoError(t, err)
 
 		err = client.Process(ctx, tc.event)
 		if tc.wantErr {
 			var be EventError
 			require.ErrorAs(t, err, &be)
-			assert.True(t, errors.Is(be.Unwrap(), tc.errType))
+			assert.Truef(t, errors.Is(be.Unwrap(), tc.errType), "%v", tc.name)
 		} else {
 			require.NoErrorf(t, err, "%s - %s", err, tc.name)
 
 			_, exists := paths[tc.event.Path]
-			require.True(t, exists)
+			require.Truef(t, exists, "%v", tc.name)
 
 			got, err := os.ReadFile(tc.event.Path)
-			require.NoError(t, err)
+			require.NoErrorf(t, err, "%v", tc.name)
 
-			require.Equal(t, tc.wantData, got)
+			require.Equalf(t, tc.wantData, got, "%v", tc.name)
 		}
 		err = os.Chdir(wd)
 		require.NoError(t, err)

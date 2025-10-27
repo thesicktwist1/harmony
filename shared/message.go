@@ -16,6 +16,7 @@ const (
 
 const (
 	Update = "UPDATE"
+	Sync   = "SYNC"
 )
 
 var (

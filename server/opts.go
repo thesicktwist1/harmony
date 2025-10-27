@@ -20,19 +20,19 @@ type opts struct {
 	acceptOpts *websocket.AcceptOptions
 }
 
-func withMaxConn(n int) optsFunc {
+func WithMaxConn(n int) optsFunc {
 	return func(o *opts) {
 		o.maxConn = n
 	}
 }
 
-func withReadLimit(n int64) optsFunc {
+func WithReadLimit(n int64) optsFunc {
 	return func(o *opts) {
 		o.readLimit = n
 	}
 }
 
-func withAcceptOpts(aOpts *websocket.AcceptOptions) optsFunc {
+func WithAcceptOpts(aOpts *websocket.AcceptOptions) optsFunc {
 	return func(o *opts) {
 		o.acceptOpts = aOpts
 	}

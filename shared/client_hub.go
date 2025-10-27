@@ -7,15 +7,16 @@ import (
 	"github.com/fsnotify/fsnotify"
 )
 
-type clientHub struct{}
+type clientHub struct {
+}
 
 func NewClientHub() clientHub {
 	return clientHub{}
 }
 
 func (c clientHub) Process(ctx context.Context, event *FileEvent) error {
-	if event.Path == "" {
-		return EventError{err: ErrEmptyPath, data: event}
+	if err := isValidPath(event.Path); err != nil {
+		return EventError{err: err, data: event}
 	}
 	switch event.Op {
 	case fsnotify.Create.String():
