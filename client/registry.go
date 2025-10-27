@@ -5,7 +5,6 @@ import (
 	"crypto/sha256"
 	"database/sql"
 	"encoding/hex"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -128,23 +127,25 @@ func (r *registry) removeDir(path string) error {
 
 func (r *registry) ListenForEvents(ctx context.Context) {
 	var (
-		waitFor  = 100 * time.Millisecond
-		slowWait = 200 * time.Millisecond
+		waitFor  = 150 * time.Millisecond
+		slowWait = 250 * time.Millisecond
 		mu       sync.Mutex
 
 		timers = make(map[string]*time.Timer)
 
 		sendEvent = func(event fsnotify.Event) {
+			name := strings.Join([]string{event.Name, event.Op.String()}, "")
 			mu.Lock()
-			delete(timers, event.Name)
+			delete(timers, name)
 			mu.Unlock()
 			if event.Has(fsnotify.Rename) {
 				event.Op = fsnotify.Remove
 			}
 			if event.Has(fsnotify.Create) && event.RenamedFrom != "" {
 				event.Op = fsnotify.Rename
+				rn := strings.Join([]string{event.RenamedFrom, fsnotify.Rename.String()}, "")
 				mu.Lock()
-				delete(timers, event.RenamedFrom)
+				delete(timers, rn)
 				mu.Unlock()
 			}
 			if event.Has(fsnotify.Write) {
@@ -159,7 +160,7 @@ func (r *registry) ListenForEvents(ctx context.Context) {
 					return
 				}
 			}
-			if err := r.Receive(event, ctx); err != nil {
+			if err := r.Receive(ctx, event); err != nil {
 				slog.Error("registry receive error", "err", err)
 			}
 		}
@@ -168,12 +169,14 @@ func (r *registry) ListenForEvents(ctx context.Context) {
 		select {
 		case err, ok := <-r.watcher.Errors:
 			if !ok {
+				slog.Error("watcher channel closed")
 				return
 			}
 			slog.Error("fsnotify watcher error", "err", err)
 
 		case event, ok := <-r.watcher.Events:
 			if !ok {
+				slog.Error("watcher channel closed")
 				return
 			}
 			name := strings.Join([]string{event.Name, event.Op.String()}, "")
@@ -201,7 +204,7 @@ func (r *registry) ListenForEvents(ctx context.Context) {
 // Receive processes a single fsnotify.Event,
 // handles directory creation, renaming,
 // removal events and broadcasting.
-func (r *registry) Receive(event fsnotify.Event, ctx context.Context) error {
+func (r *registry) Receive(ctx context.Context, event fsnotify.Event) error {
 	switch event.Op {
 	case fsnotify.Create:
 		stat, err := os.Stat(event.Name)
@@ -221,7 +224,7 @@ func (r *registry) Receive(event fsnotify.Event, ctx context.Context) error {
 			}
 		}
 	case fsnotify.Remove:
-		if err := r.handleDelete(ctx, event); err != nil {
+		if err := r.handleRemove(ctx, event); err != nil {
 			return err
 		}
 	case fsnotify.Rename:
@@ -239,9 +242,7 @@ func (r *registry) Receive(event fsnotify.Event, ctx context.Context) error {
 
 func (r *registry) handleRename(ctx context.Context, e fsnotify.Event) error {
 	if _, err := r.DB.GetFile(ctx, e.RenamedFrom); err != nil {
-		if !errors.Is(err, sql.ErrNoRows) {
-			return err
-		}
+		return err
 	}
 	stat, err := os.Stat(e.Name)
 	if err != nil {
@@ -270,8 +271,9 @@ func (r *registry) isDir(path string) bool {
 	return exists
 }
 
-func (r *registry) handleDelete(ctx context.Context, e fsnotify.Event) error {
-	if r.isDir(e.Name) {
+func (r *registry) handleRemove(ctx context.Context, e fsnotify.Event) error {
+	isDir := r.isDir(e.Name)
+	if isDir {
 		if err := r.removeDir(e.Name); err != nil {
 			return err
 		}
@@ -282,8 +284,9 @@ func (r *registry) handleDelete(ctx context.Context, e fsnotify.Event) error {
 		}
 	} else {
 		if err := r.broadcastEvent(&shared.FileEvent{
-			Path: e.Name,
-			Op:   e.Op.String(),
+			Path:  e.Name,
+			Op:    fsnotify.Remove.String(),
+			IsDir: isDir,
 		}); err != nil {
 			return err
 		}
@@ -297,11 +300,6 @@ func (r *registry) handleFile(ctx context.Context, e fsnotify.Event) error {
 	if err != nil {
 		if !errors.Is(err, sql.ErrNoRows) {
 			return err
-		} else {
-			return r.broadcastEvent(&shared.FileEvent{
-				Path: e.Name,
-				Op:   fsnotify.Create.String(),
-			})
 		}
 	} else {
 		exists = true
@@ -324,7 +322,7 @@ func (r *registry) handleFile(ctx context.Context, e fsnotify.Event) error {
 	timestamp := stat.ModTime()
 	f := &shared.FileEvent{
 		Path: e.Name,
-		Op:   fsnotify.Write.String(),
+		Op:   e.Op.String(),
 	}
 	if exists {
 		updatedAt, err := time.Parse(shared.TimeLayout, fileinfo.Updatedat)
@@ -344,7 +342,6 @@ func (r *registry) handleFile(ctx context.Context, e fsnotify.Event) error {
 		}
 	} else {
 		f.Data = data
-		f.Op = e.Op.String()
 		if err := r.broadcastEvent(f); err != nil {
 			return err
 		}
@@ -359,7 +356,7 @@ func (r *registry) handleDir(ctx context.Context, e fsnotify.Event) error {
 		} else {
 			f := &shared.FileEvent{
 				Path:  e.Name,
-				Op:    fsnotify.Create.String(),
+				Op:    e.Op.String(),
 				IsDir: true,
 			}
 			if err := r.broadcastEvent(f); err != nil {
@@ -393,15 +390,15 @@ func (r *registry) handleDir(ctx context.Context, e fsnotify.Event) error {
 }
 
 func (r *registry) broadcastEvent(event *shared.FileEvent) error {
-	envl, err := shared.NewEnvelope(event, shared.File)
+	payload, err := shared.MarshalEnvl(event, shared.Event)
 	if err != nil {
 		return err
 	}
-	payload, err := json.Marshal(envl)
-	if err != nil {
-		return fmt.Errorf("payload marshaling error: %v", err)
+	select {
+	case r.msgBuffer <- payload:
+	default:
+		return fmt.Errorf("unable to reach message buffer")
 	}
-	r.msgBuffer <- payload
 	return nil
 }
 

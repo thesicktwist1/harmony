@@ -10,6 +10,7 @@ import (
 	"sync"
 
 	"github.com/coder/websocket"
+	"github.com/fsnotify/fsnotify"
 	"github.com/go-chi/chi/v5"
 	"github.com/thesicktwist1/harmony/shared"
 	"github.com/thesicktwist1/harmony/shared/database"
@@ -123,10 +124,12 @@ func (s *server) broadcast(msg []byte, sender *Client) {
 	s.RLock()
 	clients := make(map[*Client]struct{})
 	for client := range s.clients {
+		if client == sender {
+			continue
+		}
 		clients[client] = struct{}{}
 	}
 	s.RUnlock()
-	delete(clients, sender)
 	for client := range clients {
 		select {
 		case client.msgBuffer <- msg:
@@ -137,6 +140,10 @@ func (s *server) broadcast(msg []byte, sender *Client) {
 }
 
 func (s *server) respond(msg []byte, client *Client) {
+	if client == nil {
+		slog.Error("respond called with nil client")
+		return
+	}
 	s.Lock()
 	defer s.Unlock()
 	_, ok := s.clients[client]
@@ -157,7 +164,7 @@ func (s *server) Receive(ctx context.Context, msg message) error {
 		return err
 	}
 	switch env.Type {
-	case shared.File:
+	case shared.Event:
 		var event shared.FileEvent
 		if err := json.Unmarshal(env.Message, &event); err != nil {
 			return err
@@ -166,11 +173,8 @@ func (s *server) Receive(ctx context.Context, msg message) error {
 			return err
 		}
 		if event.Op == shared.Update {
-			newEnv, err := shared.NewEnvelope(event, shared.File)
-			if err != nil {
-				return err
-			}
-			newPayload, err := json.Marshal(newEnv)
+			event.Op = fsnotify.Create.String()
+			newPayload, err := shared.MarshalEnvl(event, shared.Event)
 			if err != nil {
 				return err
 			}

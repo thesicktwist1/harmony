@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"errors"
 	"log"
 	"log/slog"
@@ -32,27 +33,10 @@ func newClient(watcher *fsnotify.Watcher, db *sql.DB) *client {
 
 func (c *client) Run(ctx context.Context) error {
 	log.Println("client starting...")
-	info, err := os.Stat(storage)
-	if err != nil {
-		if !errors.Is(err, os.ErrNotExist) {
-			return err
-		}
-		if err := os.Mkdir(storage, 0777); err != nil {
-			return err
-		}
-	}
-	if !info.IsDir() {
-		if err := os.Remove(storage); err != nil {
-			return err
-		}
-		if err := os.Mkdir(storage, 0777); err != nil {
-			return err
-		}
-	}
-	if err := c.registry.appendDir(storage); err != nil {
+	if err := c.CreateStorage(); err != nil {
 		return err
 	}
-	conn, err := c.Connect(ctx)
+	conn, _, err := websocket.Dial(ctx, localhost, nil)
 	if err != nil {
 		return err
 	}
@@ -62,22 +46,39 @@ func (c *client) Run(ctx context.Context) error {
 	return nil
 }
 
-func (c *client) Connect(ctx context.Context) (*websocket.Conn, error) {
-	conn, _, err := websocket.Dial(ctx, localhost, nil)
+func (c *client) CreateStorage() error {
+	info, err := os.Stat(storage)
 	if err != nil {
-		return nil, err
+		if !errors.Is(err, os.ErrNotExist) {
+			return err
+		}
+		if err := os.Mkdir(storage, 0777); err != nil {
+			return err
+		}
+	} else {
+		if !info.IsDir() {
+			if err := os.Remove(storage); err != nil {
+				return err
+			}
+			if err := os.Mkdir(storage, 0777); err != nil {
+				return err
+			}
+		}
 	}
-	log.Println("Connected to the server.")
-	return conn, nil
+	if err := c.registry.appendDir(storage); err != nil {
+		return err
+	}
+	return nil
 }
 
 func (c *client) readMessages(ctx context.Context, conn *websocket.Conn) {
+
 	for {
 		select {
 		case <-ctx.Done():
 			return
 		default:
-			mType, _, err := conn.Read(ctx)
+			mType, msg, err := conn.Read(ctx)
 			if err != nil {
 				if websocket.CloseStatus(err) != websocket.StatusNormalClosure {
 					slog.Error("error abnormal closure", "err", err)
@@ -85,7 +86,22 @@ func (c *client) readMessages(ctx context.Context, conn *websocket.Conn) {
 				}
 			}
 			if mType == websocket.MessageBinary {
-
+				var env shared.Envelope
+				if err := json.Unmarshal(msg, &env); err != nil {
+					slog.Error("unmarshal envelope error: %v", "err", err)
+					return
+				}
+				switch env.Type {
+				case shared.Event:
+					var event shared.FileEvent
+					if err := json.Unmarshal(env.Message, &event); err != nil {
+						slog.Error("unmarshal file event error: %v", "err", err)
+						return
+					}
+					if err := c.Process(ctx, &event); err != nil {
+						slog.Error("error processing event: %v", "err", err)
+					}
+				}
 			}
 		}
 	}

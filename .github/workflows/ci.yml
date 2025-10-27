@@ -1,0 +1,74 @@
+
+name: ci
+
+on:
+  push:
+    branches: [ "main" ]
+  pull_request:
+    branches: [ "main" ]
+
+jobs:
+
+  tests:
+    name: Tests 
+    runs-on: ubuntu-latest
+
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Set up Go
+      uses: actions/setup-go@v4
+      with:
+        go-version: '1.23.0'
+
+    - name: Test shared package
+      working-directory: shared
+      run:  go mod tidy && go test ./... || true
+
+    - name: Test server package
+      working-directory: server
+      run:  go mod tidy && go test ./... || true
+
+    - name: Test client package
+      working-directory: shared
+      run:  go mod tidy && go test ./... || true
+
+
+  style:
+   name: Style
+
+   runs-on: ubuntu-latest
+   steps:
+      - name: Check out code
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+            go version: '1.23.0'
+      - name: Install staticcheck
+        run: go install honnef.co/go/tools/cmd/staticcheck@latest
+        
+      - name: Check formatting (shared package)
+        working-directory: shared
+        run: test -z $(go fmt ./...)
+
+      - name: staticcheck (shared package)
+        working-directory: shared
+        run: staticcheck ./...
+
+      - name: Check formatting (server package)
+        working-directory: server
+        run: test -z $(go fmt ./...)
+
+      - name: staticcheck (server package)
+        working-directory: server
+        run: staticcheck ./...
+  
+      - name: Check formatting (client package)
+        working-directory: client
+        run: test -z $(go fmt ./...)
+      
+      - name: staticcheck (client package)
+        working-directory: client
+        run: staticcheck ./...

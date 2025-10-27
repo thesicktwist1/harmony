@@ -211,12 +211,13 @@ func TestRegistry(t *testing.T) {
 			wantFileEvent: &shared.FileEvent{
 				Path: path.Join(storage, "file.txt"),
 				Op:   fsnotify.Create.String(),
+				Data: []byte{},
 			},
 		},
 		{
 			name: "writing to a previous version of a file",
 			event: func(s string, fm os.FileMode) error {
-				file, err := os.OpenFile(s, os.O_RDWR, 0777)
+				file, err := os.OpenFile(s, os.O_RDWR, fm)
 				if err != nil {
 					return err
 				}
@@ -245,6 +246,66 @@ func TestRegistry(t *testing.T) {
 				Op:   shared.Update,
 			},
 		},
+		{
+			name: "renaming a file",
+			event: func(s string, fm os.FileMode) error {
+				return os.Rename(s, path.Join(storage, "renamed.txt"))
+			},
+			path: path.Join(storage, "test-2.txt"),
+			wantFileEvent: &shared.FileEvent{
+				Path:    path.Join(storage, "test-2.txt"),
+				NewPath: path.Join(storage, "renamed.txt"),
+				Op:      fsnotify.Rename.String(),
+			},
+		},
+		{
+			name: "moving file to watched dir from unwatched source",
+			event: func(s string, fm os.FileMode) error {
+				return os.Rename(s, path.Join(storage, "unwatched_file.go"))
+			},
+			path: "unwatched_file.go",
+			wantFileEvent: &shared.FileEvent{
+				Path: path.Join(storage, "unwatched_file.go"),
+				Op:   fsnotify.Create.String(),
+				Data: []byte("foo"),
+			},
+		},
+		{
+			name: "moving directory",
+			event: func(s string, fm os.FileMode) error {
+				return os.Rename(s, path.Join(storage, "dir-2", "dir-1"))
+			},
+			path: path.Join(storage, "dir-1"),
+			wantFileEvent: &shared.FileEvent{
+				Path:    path.Join(storage, "dir-1"),
+				NewPath: path.Join(storage, "dir-2", "dir-1"),
+				Op:      fsnotify.Rename.String(),
+				IsDir:   true,
+			},
+		},
+		{
+			name: "delete directory",
+			event: func(s string, fm os.FileMode) error {
+				return os.RemoveAll(s)
+			},
+			path: path.Join(storage, "dir-2"),
+			wantFileEvent: &shared.FileEvent{
+				Path:  path.Join(storage, "dir-2"),
+				Op:    fsnotify.Remove.String(),
+				IsDir: true,
+			},
+		},
+		{
+			name: "delete file",
+			event: func(s string, fm os.FileMode) error {
+				return os.Remove(s)
+			},
+			path: path.Join(storage, "test-2.txt"),
+			wantFileEvent: &shared.FileEvent{
+				Path: path.Join(storage, "test-2.txt"),
+				Op:   fsnotify.Remove.String(),
+			},
+		},
 	}
 	for _, tc := range tests {
 		var (
@@ -252,6 +313,9 @@ func TestRegistry(t *testing.T) {
 			dbPath = path.Join(tmp, "test.db")
 		)
 		_, err = os.Create(dbPath)
+		require.NoError(t, err)
+
+		err = os.WriteFile(path.Join(tmp, "unwatched_file.go"), []byte("foo"), perm)
 		require.NoError(t, err)
 
 		db, err := makeDB(dbPath, "sqlite")
@@ -279,10 +343,10 @@ func TestRegistry(t *testing.T) {
 
 		go registry.ListenForEvents(ctx)
 
-		time.Sleep(time.Millisecond * 200)
+		time.Sleep(time.Millisecond * 300)
 		err = tc.event(tc.path, perm)
 		require.NoError(t, err)
-		time.Sleep(time.Millisecond * 200)
+		time.Sleep(time.Millisecond * 300)
 
 		select {
 		case msg := <-registry.msgBuffer:
@@ -296,10 +360,70 @@ func TestRegistry(t *testing.T) {
 
 			require.Equal(t, tc.wantFileEvent, &got)
 		default:
-			t.Fatalf("error receiving message %v", tc.wantFileEvent)
+			t.Fatal("error receiving message:", tc.name)
 		}
 
 		err = os.Chdir(wd)
 		require.NoError(t, err)
 	}
+}
+
+func TestClientCreateStorage(t *testing.T) {
+	wd, err := os.Getwd()
+	require.NoError(t, err)
+	defer require.NoError(t, os.Chdir(wd))
+
+	watcher, err := fsnotify.NewWatcher()
+	require.NoError(t, err)
+	defer watcher.Close()
+
+	var (
+		tmp    = t.TempDir()
+		client = newClient(watcher, nil)
+	)
+
+	err = os.Chdir(tmp)
+	require.NoError(t, err)
+
+	//test 1 - storage doesn't exist so we create it
+	err = client.CreateStorage()
+	require.NoError(t, err)
+
+	got, err := os.Stat(storage)
+	require.NoErrorf(t, err, "file doesn't exist (test 1)")
+
+	require.Truef(t, got.IsDir(), "storage is not a directory (test 1)")
+
+	err = os.Remove(storage)
+	require.NoError(t, err)
+
+	//test 2 - storage already exist as a directory we just return
+	err = os.Mkdir(storage, 0777)
+	require.NoError(t, err)
+
+	err = client.CreateStorage()
+	require.NoError(t, err)
+
+	got, err = os.Stat(storage)
+	require.NoErrorf(t, err, "file doesn't exist (test 2)")
+
+	require.Truef(t, got.IsDir(), "storage is not a directory (test 2)")
+
+	err = os.Remove(storage)
+	require.NoError(t, err)
+
+	//test 3 - storage already exist as a file (delete and create as a directory)
+	err = os.WriteFile(storage, nil, 0777)
+	require.NoError(t, err)
+
+	err = client.CreateStorage()
+	require.NoError(t, err)
+
+	got, err = os.Stat(storage)
+	require.NoErrorf(t, err, "file doesn't exist (test 3)")
+
+	require.Truef(t, got.IsDir(), "storage is not a directory (test 3)")
+
+	require.True(t, got.IsDir())
+
 }
