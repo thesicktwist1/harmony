@@ -223,7 +223,14 @@ func (s serverHub) renameDir(ctx context.Context, event *FileEvent) error {
 }
 
 func (s serverHub) Write(ctx context.Context, event *FileEvent) error {
-	if err := write(event); err != nil {
+	stat, err := os.Stat(event.Path)
+	if err != nil {
+		return err
+	}
+	if stat.IsDir() {
+		return ErrMalformedEvent
+	}
+	if err := os.WriteFile(event.Path, event.Data, 0777); err != nil {
 		return err
 	}
 	if err := s.DB.UpdateFile(ctx, database.UpdateFileParams{
@@ -247,4 +254,8 @@ func (s serverHub) renameFile(ctx context.Context, event *FileEvent) error {
 		return err
 	}
 	return nil
+}
+
+func (s serverHub) CreateStorage() error {
+	return createStorage()
 }

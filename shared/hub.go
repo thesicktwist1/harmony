@@ -11,15 +11,19 @@ import (
 
 type Hub interface {
 	Process(context.Context, *FileEvent) error
+	CreateStorage() error
 }
 
 func write(event *FileEvent) error {
 	stat, err := os.Stat(event.Path)
 	if err != nil {
-		return err
-	}
-	if stat.IsDir() {
-		return ErrMalformedEvent
+		if !errors.Is(err, os.ErrNotExist) {
+			return err
+		}
+	} else {
+		if stat.IsDir() {
+			return ErrMalformedEvent
+		}
 	}
 	return os.WriteFile(event.Path, event.Data, 0777)
 }
@@ -90,4 +94,22 @@ func create(event *FileEvent) error {
 	} else {
 		return os.ErrExist
 	}
+}
+
+func createStorage() error {
+	info, err := os.Stat(storage)
+	if err != nil {
+		if !errors.Is(err, os.ErrNotExist) {
+			return err
+		}
+		return os.Mkdir(storage, 0777)
+	} else {
+		if !info.IsDir() {
+			if err := os.Remove(storage); err != nil {
+				return err
+			}
+			return os.Mkdir(storage, 0777)
+		}
+	}
+	return nil
 }

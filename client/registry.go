@@ -31,6 +31,7 @@ var (
 const (
 	storage    = "storage"
 	backup     = "backup"
+	backupSep  = "_"
 	bufferSize = 32
 )
 
@@ -54,7 +55,7 @@ type registry struct {
 	// keeps track of the registered directories
 	watchedDir WatchedDir
 
-	// message channel used for writing to the connection
+	// message channel used to write to the connection
 	msgBuffer chan []byte
 
 	// mutex used to keep things safe
@@ -76,6 +77,127 @@ func newDirectory(name, path string) *directory {
 		path:   path,
 		childs: make(childDirs),
 	}
+}
+
+func (r *registry) SyncTree(root *shared.FSNode) {
+	if root == nil {
+		return
+	}
+	fileinfo, err := os.Stat(root.Path)
+	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			if root.IsDir {
+				if err := os.Mkdir(root.Path, 0777); err != nil {
+					slog.Error("error creating dir : %v", "err", err)
+					return
+				}
+			} else {
+				if err := r.broadcastEvent(&shared.FileEvent{
+					Path: root.Path,
+					Op:   shared.Update,
+				}); err != nil {
+					slog.Error("error broadcasting event : %v", "err", err)
+					return
+				}
+				return
+			}
+		} else {
+			slog.Error("error :%v", "err", err)
+			return
+		}
+	} else {
+		if root.IsDir != fileinfo.IsDir() {
+			// move file to backup
+			if info, err := os.Stat(backup); err != nil {
+				if errors.Is(err, os.ErrNotExist) {
+					if err := os.Mkdir(backup, 0777); err != nil {
+						slog.Error("error creating backup directory : %v", "err", err)
+						return
+					}
+				} else {
+					slog.Error("error : %v", "err", err)
+					return
+				}
+			} else {
+				if !info.IsDir() {
+					if err := os.Remove(backup); err != nil {
+						slog.Error("error : %v", "err", err)
+						return
+					}
+					if err := os.Mkdir(backup, 0777); err != nil {
+						slog.Error("error : %v", "err", err)
+						return
+					}
+				}
+			}
+			newPath := path.Join(backup, fileinfo.Name())
+
+			if _, err := os.Stat(newPath); err == nil {
+				newName := strings.Join([]string{fileinfo.Name(),
+					fileinfo.ModTime().Format(shared.TimeLayout)}, backupSep)
+				newPath = path.Join(backup, newName)
+			} else {
+				if !errors.Is(err, os.ErrNotExist) {
+					slog.Error("error : %v", "err", err)
+					return
+				}
+			}
+
+			if err := os.Rename(root.Path, newPath); err != nil {
+				slog.Error("error moving path : %v , to new path: %v", root.Path, newPath)
+				return
+			}
+			if root.IsDir {
+				if err := os.Mkdir(root.Path, 0777); err != nil {
+					slog.Error("error %v", "err", err)
+					return
+				}
+			} else {
+				if err := r.broadcastEvent(&shared.FileEvent{
+					Path: root.Path,
+					Op:   shared.Update,
+				}); err != nil {
+					slog.Error("error broadcasting event : %v", "err", err)
+					return
+				}
+				return
+			}
+		} else {
+			if !root.IsDir {
+				nodeTimestamp, err := time.Parse(shared.TimeLayout, root.ModTime)
+				if err != nil {
+					slog.Error("error parsing time : %v", "err", err)
+					return
+				}
+				data, err := os.ReadFile(root.Path)
+				if err != nil {
+					slog.Error("error reading file : %v", "err", err)
+					return
+				}
+				sumBytes := sha256.Sum256(data)
+				hash := hex.EncodeToString(sumBytes[:])
+				if root.Hash != hash {
+					if fileinfo.ModTime().After(nodeTimestamp) {
+						if err := r.broadcastEvent(&shared.FileEvent{
+							Path: root.Path,
+							Op:   fsnotify.Write.String(),
+							Hash: hash,
+							Data: data,
+						}); err != nil {
+							slog.Error("error broadcasting event : %v", "err", err)
+							return
+						}
+					}
+				}
+			}
+		}
+	}
+	if root.IsDir {
+		for _, child := range root.Childs {
+			r.SyncTree(child)
+		}
+	}
+
 }
 
 func (r *registry) appendDir(path string) error {
@@ -304,6 +426,12 @@ func (r *registry) handleFile(ctx context.Context, e fsnotify.Event) error {
 			return err
 		}
 	} else {
+		if e.Op.Has(fsnotify.Create) {
+			return r.broadcastEvent(&shared.FileEvent{
+				Path: e.Name,
+				Op:   shared.Update,
+			})
+		}
 		exists = true
 	}
 	file, err := os.Open(e.Name)

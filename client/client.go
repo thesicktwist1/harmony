@@ -4,10 +4,8 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
-	"errors"
 	"log"
 	"log/slog"
-	"os"
 
 	"github.com/coder/websocket"
 	"github.com/fsnotify/fsnotify"
@@ -36,6 +34,9 @@ func (c *client) Run(ctx context.Context) error {
 	if err := c.CreateStorage(); err != nil {
 		return err
 	}
+	if err := c.registry.appendDir(storage); err != nil {
+		return err
+	}
 	conn, _, err := websocket.Dial(ctx, localhost, nil)
 	if err != nil {
 		return err
@@ -43,31 +44,6 @@ func (c *client) Run(ctx context.Context) error {
 	defer conn.CloseNow()
 	go c.writeMessages(ctx, conn)
 	c.readMessages(ctx, conn)
-	return nil
-}
-
-func (c *client) CreateStorage() error {
-	info, err := os.Stat(storage)
-	if err != nil {
-		if !errors.Is(err, os.ErrNotExist) {
-			return err
-		}
-		if err := os.Mkdir(storage, 0777); err != nil {
-			return err
-		}
-	} else {
-		if !info.IsDir() {
-			if err := os.Remove(storage); err != nil {
-				return err
-			}
-			if err := os.Mkdir(storage, 0777); err != nil {
-				return err
-			}
-		}
-	}
-	if err := c.registry.appendDir(storage); err != nil {
-		return err
-	}
 	return nil
 }
 

@@ -47,14 +47,14 @@ func makeDB(dbPath, driverName string) (*database.Queries, error) {
 func initTMP(db *database.Queries) error {
 	ctx := context.Background()
 	for p, isDir := range paths {
+		if err := os.MkdirAll(path.Dir(p), 0777); err != nil {
+			return err
+		}
 		if isDir {
 			if err := os.MkdirAll(p, 0777); err != nil {
 				return err
 			}
 		} else {
-			if err := os.MkdirAll(path.Dir(p), 0777); err != nil {
-				return err
-			}
 			file, err := os.Create(p)
 			if err != nil {
 				return err
@@ -80,6 +80,8 @@ func initTMP(db *database.Queries) error {
 func TestServerHubCreateEvent(t *testing.T) {
 	wd, err := os.Getwd()
 	require.NoError(t, err)
+
+	defer os.Chdir(wd)
 
 	tests := []struct {
 		name    string
@@ -219,6 +221,8 @@ func TestServerHubCreateEvent(t *testing.T) {
 func TestServerHubRenameEvent(t *testing.T) {
 	wd, err := os.Getwd()
 	require.NoError(t, err)
+
+	defer os.Chdir(wd)
 	tests := []struct {
 		name    string
 		event   *FileEvent
@@ -419,6 +423,8 @@ func TestServerHubRenameEvent(t *testing.T) {
 func TestServerHubRemoveEvent(t *testing.T) {
 	wd, err := os.Getwd()
 	require.NoError(t, err)
+
+	defer os.Chdir(wd)
 	tests := []struct {
 		name    string
 		event   *FileEvent
@@ -518,6 +524,8 @@ func TestServerHubRemoveEvent(t *testing.T) {
 func TestServerHubWriteEvent(t *testing.T) {
 	wd, err := os.Getwd()
 	require.NoError(t, err)
+
+	defer os.Chdir(wd)
 	tests := []struct {
 		name     string
 		event    *FileEvent
@@ -614,8 +622,8 @@ func TestServerHubWriteEvent(t *testing.T) {
 }
 func TestServerHubUpdateEvent(t *testing.T) {
 	wd, err := os.Getwd()
-
 	require.NoError(t, err)
+	defer os.Chdir(wd)
 	tests := []struct {
 		name      string
 		event     *FileEvent
@@ -700,6 +708,7 @@ func TestClientHubUpdate(t *testing.T) {
 	ctx := context.Background()
 	wd, err := os.Getwd()
 	require.NoError(t, err)
+	defer os.Chdir(wd)
 	tests := []struct {
 		name     string
 		event    *FileEvent
@@ -727,13 +736,13 @@ func TestClientHubUpdate(t *testing.T) {
 			errType: ErrEmptyPath,
 		},
 		{
-			name: "invalid update (file doesn't exists)",
+			name: "file doesn't exists",
 			event: &FileEvent{
 				Path: path.Join(storage, "dir-1", "invalid.txt"),
 				Op:   Update,
+				Data: []byte("123"),
 			},
-			wantErr: true,
-			errType: os.ErrNotExist,
+			wantData: []byte("123"),
 		},
 		{
 			name: "invalid update (trying to update a directory)",
@@ -764,14 +773,91 @@ func TestClientHubUpdate(t *testing.T) {
 		} else {
 			require.NoErrorf(t, err, "%s - %s", err, tc.name)
 
-			_, exists := paths[tc.event.Path]
-			require.Truef(t, exists, "%v", tc.name)
-
 			got, err := os.ReadFile(tc.event.Path)
 			require.NoErrorf(t, err, "%v", tc.name)
 
 			require.Equalf(t, tc.wantData, got, "%v", tc.name)
 		}
+		err = os.Chdir(wd)
+		require.NoError(t, err)
+	}
+}
+
+func TestBuildTree(t *testing.T) {
+	wd, err := os.Getwd()
+	require.NoError(t, err)
+	defer os.Chdir(wd)
+	tests := []struct {
+		name    string
+		path    string
+		want    *FSNode
+		wantNil bool
+	}{
+		{
+			name: "dir-2 tree",
+			path: path.Join(storage, "dir-2"),
+			want: &FSNode{
+				Path:  path.Join(storage, "dir-2"),
+				IsDir: true,
+				Childs: []*FSNode{
+					{
+						Path:  path.Join(storage, "dir-2", "subdir-2"),
+						IsDir: true,
+					},
+					{
+						Path: path.Join(storage, "dir-2", "file-2.txt"),
+						Hash: "35b6affcaf3e88291a3eddfcdf6634f4cfc5c31126d1648ab36c09aff1c1f1b1",
+					},
+				},
+			},
+		},
+		{
+			name:    "tree based on a file should be nil",
+			path:    path.Join(storage, "dir-2", "file-2.txt"),
+			want:    nil,
+			wantNil: true,
+		},
+	}
+
+	for _, tc := range tests {
+		var (
+			tmp          = t.TempDir()
+			compareNodes = func(want, got *FSNode) {
+				require.Equalf(t, want.Hash, got.Hash,
+					"expected : %+v, got : %+v",
+					want, got)
+				require.Equalf(t, want.Path, got.Path,
+					"expected : %+v, got : %+v",
+					want, got)
+				require.Equalf(t, want.IsDir, got.IsDir,
+					"expected : %+v, got : %+v",
+					want, got)
+			}
+		)
+
+		err = os.Chdir(tmp)
+		require.NoError(t, err)
+
+		err = initTMP(nil)
+		require.NoError(t, err)
+
+		if tc.wantNil {
+			require.Nil(t, tc.want)
+		} else {
+			require.NotNil(t, tc.want)
+
+			got := BuildTree(tc.path, nil)
+
+			SortChilds(got)
+			SortChilds(tc.want)
+
+			compareNodes(tc.want, got)
+
+			for i := range len(tc.want.Childs) {
+				compareNodes(tc.want.Childs[i], got.Childs[i])
+			}
+		}
+
 		err = os.Chdir(wd)
 		require.NoError(t, err)
 	}

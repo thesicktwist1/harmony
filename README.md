@@ -15,7 +15,7 @@ the changes to other connected clients.
 
 **Using:**
 - **Go** Simple, fast, and concurrent
-- **fsnotify** Cross-platform filesystem notifications
+- **fsnotify** Cross-platform filesystem notifier
 - **WebSocket** Communication between client and server
 - **Turso (libSql)** SQLite-compatible database
 

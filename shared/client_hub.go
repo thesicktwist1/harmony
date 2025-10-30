@@ -47,3 +47,7 @@ func (c clientHub) Process(ctx context.Context, event *FileEvent) error {
 	}
 	return nil
 }
+
+func (c clientHub) CreateStorage() error {
+	return createStorage()
+}

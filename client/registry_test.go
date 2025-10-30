@@ -104,6 +104,8 @@ func initTMP(tmp string) error {
 func TestRegistryRemoveAndAppend(t *testing.T) {
 	wd, err := os.Getwd()
 	require.NoError(t, err)
+
+	defer os.Chdir(wd)
 	var (
 		tmp = t.TempDir()
 	)
@@ -182,8 +184,12 @@ func TestRegistryRemoveAndAppend(t *testing.T) {
 
 func TestRegistry(t *testing.T) {
 	perm := os.FileMode(0777)
+
 	wd, err := os.Getwd()
 	require.NoError(t, err)
+
+	defer os.Chdir(wd)
+
 	tests := []struct {
 		name          string
 		event         func(string, os.FileMode) error
@@ -368,10 +374,11 @@ func TestRegistry(t *testing.T) {
 	}
 }
 
-func TestClientCreateStorage(t *testing.T) {
+func TestCreateStorage(t *testing.T) {
 	wd, err := os.Getwd()
 	require.NoError(t, err)
-	defer require.NoError(t, os.Chdir(wd))
+
+	defer os.Chdir(wd)
 
 	watcher, err := fsnotify.NewWatcher()
 	require.NoError(t, err)
@@ -426,4 +433,170 @@ func TestClientCreateStorage(t *testing.T) {
 
 	require.True(t, got.IsDir())
 
+	require.NoError(t, os.Chdir(wd))
+}
+
+// AI Generated (with some tweaking)
+func TestSyncTreeCases(t *testing.T) {
+	wd, err := os.Getwd()
+	require.NoError(t, err)
+
+	defer os.Chdir(wd)
+
+	const helloHash = "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+
+	type tc struct {
+		name             string
+		node             *shared.FSNode
+		wantBackupAsFile bool
+		expectEvent      bool
+		wantFileEvent    *shared.FileEvent
+		wantExists       map[string]bool
+	}
+
+	tests := []tc{
+		{
+			name: "create missing file emits Update",
+
+			node: &shared.FSNode{
+				Path:  path.Join(storage, "newfile.txt"),
+				IsDir: false,
+			},
+			expectEvent: true,
+			wantFileEvent: &shared.FileEvent{
+				Path: path.Join(storage, "newfile.txt"),
+				Op:   shared.Update,
+			},
+		},
+		{
+			name: "create missing dir no event",
+
+			node: &shared.FSNode{
+				Path:  path.Join(storage, "newdir"),
+				IsDir: true,
+			},
+			expectEvent: false,
+			wantExists: map[string]bool{
+				path.Join(storage, "newdir"): true,
+			},
+		},
+		{
+			name: "existing dir replaced by file moves to backup and emits Update",
+
+			node: &shared.FSNode{
+				Path:  path.Join(storage, "dir-1"),
+				IsDir: false,
+			},
+			expectEvent: true,
+			wantFileEvent: &shared.FileEvent{
+				Path: path.Join(storage, "dir-1"),
+				Op:   shared.Update,
+			},
+			wantExists: map[string]bool{
+				path.Join(backup, "dir-1"): true,
+			},
+		},
+		{
+			name: "file changed on disk after node timestamp emits Write with data and hash",
+			node: &shared.FSNode{
+				Path:    path.Join(storage, "test-2.txt"),
+				IsDir:   false,
+				ModTime: time.Now().Add(-2 * time.Hour).Format(shared.TimeLayout),
+				Hash:    "oldhash",
+			},
+			expectEvent: true,
+			wantFileEvent: &shared.FileEvent{
+				Path: path.Join(storage, "test-2.txt"),
+				Op:   fsnotify.Write.String(),
+				Hash: helloHash,
+				Data: []byte{},
+			},
+			wantExists: map[string]bool{
+				path.Join(storage, "test-2.txt"): true,
+			},
+		},
+		{
+			name: "moves dir to backup (with existing backup as a file)",
+
+			node: &shared.FSNode{
+				Path:  path.Join(storage, "dir-1"),
+				IsDir: false,
+			},
+			expectEvent: true,
+			wantFileEvent: &shared.FileEvent{
+				Path: path.Join(storage, "dir-1"),
+				Op:   shared.Update,
+			},
+			wantExists: map[string]bool{
+				path.Join(backup, "dir-1"): true,
+			},
+			wantBackupAsFile: true,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			tmp := t.TempDir()
+
+			require.NoError(t, initTMP(tmp))
+
+			require.NoError(t, os.Chdir(tmp))
+
+			if tc.wantBackupAsFile {
+				require.NoError(t, os.WriteFile(backup, nil, 0777))
+			}
+
+			watcher, err := fsnotify.NewWatcher()
+			require.NoError(t, err)
+			defer watcher.Close()
+
+			r := newRegistry(watcher, nil)
+
+			r.SyncTree(tc.node)
+
+			// Helper to receive and decode event from msgBuffer with timeout
+			var fe *shared.FileEvent
+			select {
+			case msg := <-r.msgBuffer:
+				var env shared.Envelope
+				require.NoError(t, json.Unmarshal(msg, &env))
+				fe = &shared.FileEvent{}
+				require.NoError(t, json.Unmarshal(env.Message, fe))
+			case <-time.After(300 * time.Millisecond):
+				// timeout - no event received
+			}
+
+			if tc.expectEvent {
+				require.NotNil(t, fe, "expected event but none received")
+				if tc.wantFileEvent.Op != "" {
+					require.Equal(t, tc.wantFileEvent.Op, fe.Op)
+				}
+				if tc.wantFileEvent.Path != "" {
+					require.Equal(t, tc.wantFileEvent.Path, fe.Path)
+				}
+				if tc.wantFileEvent.NewPath != "" {
+					require.Equal(t, tc.wantFileEvent.NewPath, fe.NewPath)
+				}
+				if tc.wantFileEvent.Hash != "" {
+					require.Equal(t, tc.wantFileEvent.Hash, fe.Hash)
+				}
+				if tc.wantFileEvent.Data != nil {
+					require.Equal(t, tc.wantFileEvent.Data, fe.Data)
+				}
+			} else {
+				require.Nil(t, fe, "did not expect event but received one")
+			}
+
+			// verify filesystem expectations
+			for p, shouldExist := range tc.wantExists {
+				_, err := os.Stat(p)
+				if shouldExist {
+					require.NoErrorf(t, err, "expected path to exist: %s", p)
+				} else {
+					require.Truef(t, os.IsNotExist(err), "expected path to not exist: %s", p)
+				}
+			}
+			require.NoError(t, os.Chdir(wd))
+		})
+	}
 }

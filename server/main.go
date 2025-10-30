@@ -36,6 +36,10 @@ func main() {
 
 	server := NewServer(ctx, db)
 
+	if err := server.CreateStorage(); err != nil {
+		log.Fatal(err)
+	}
+
 	go func() {
 		sig := <-signalChan
 		log.Printf("Received signal : %v. Shutting down...", sig)
