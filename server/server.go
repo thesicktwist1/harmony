@@ -91,6 +91,8 @@ func (s *server) serveWS(w http.ResponseWriter, r *http.Request) {
 
 	s.addClient(c)
 
+	s.SendFSTree(c)
+
 	go c.readMessages(s.ctx)
 	go c.writeMessages(s.ctx)
 }
@@ -99,6 +101,7 @@ func (s *server) addClient(c *Client) {
 	s.Lock()
 	defer s.Unlock()
 	s.clients[c] = struct{}{}
+
 }
 
 func (s *server) removeClient(c *Client) {
@@ -109,6 +112,16 @@ func (s *server) removeClient(c *Client) {
 		delete(s.clients, c)
 		c.conn.CloseNow()
 	}
+}
+
+func (s *server) SendFSTree(client *Client) error {
+	tree := shared.BuildTree(storage)
+	payload, err := shared.MarshalEnvl(tree, shared.FSTree)
+	if err != nil {
+		return err
+	}
+	s.respond(payload, client)
+	return nil
 }
 
 func (s *server) AtMaxCapacity() bool {

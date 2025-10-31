@@ -29,10 +29,11 @@ var (
 )
 
 const (
-	storage    = "storage"
-	backup     = "backup"
-	backupSep  = "_"
-	bufferSize = 32
+	storage      = "storage"
+	backup       = "backup"
+	backupSep    = "_"
+	bufferSize   = 32
+	backUpFormat = "January 2, 2006 15:04:05"
 )
 
 type directory struct {
@@ -130,21 +131,14 @@ func (r *registry) SyncTree(root *shared.FSNode) {
 					}
 				}
 			}
-			newPath := path.Join(backup, fileinfo.Name())
+			newName := strings.Join([]string{
+				fileinfo.ModTime().Format(backUpFormat),
+				fileinfo.Name()}, backupSep)
 
-			if _, err := os.Stat(newPath); err == nil {
-				newName := strings.Join([]string{fileinfo.Name(),
-					fileinfo.ModTime().Format(shared.TimeLayout)}, backupSep)
-				newPath = path.Join(backup, newName)
-			} else {
-				if !errors.Is(err, os.ErrNotExist) {
-					slog.Error("error : %v", "err", err)
-					return
-				}
-			}
+			newPath := path.Join(backup, newName)
 
 			if err := os.Rename(root.Path, newPath); err != nil {
-				slog.Error("error moving path : %v , to new path: %v", root.Path, newPath)
+				slog.Error("error moving path to new path: %v", "err", err)
 				return
 			}
 			if root.IsDir {

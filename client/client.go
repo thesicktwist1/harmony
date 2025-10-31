@@ -22,7 +22,7 @@ type client struct {
 	shared.Hub
 }
 
-func newClient(watcher *fsnotify.Watcher, db *sql.DB) *client {
+func NewClient(watcher *fsnotify.Watcher, db *sql.DB) *client {
 	return &client{
 		registry: newRegistry(watcher, database.New(db)),
 		Hub:      shared.NewClientHub(),
@@ -77,6 +77,13 @@ func (c *client) readMessages(ctx context.Context, conn *websocket.Conn) {
 					if err := c.Process(ctx, &event); err != nil {
 						slog.Error("error processing event: %v", "err", err)
 					}
+				case shared.FSTree:
+					var tree shared.FSNode
+					if err := json.Unmarshal(env.Message, &tree); err != nil {
+						slog.Error("unmarshal fsnode error: %v", "err", err)
+						return
+					}
+					c.registry.SyncTree(&tree)
 				}
 			}
 		}

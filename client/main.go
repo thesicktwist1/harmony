@@ -34,7 +34,7 @@ func main() {
 	defer watcher.Close()
 
 	ctx, cancel := context.WithCancel(context.Background())
-	c := newClient(watcher, db)
+	c := NewClient(watcher, db)
 
 	signalChan := make(chan os.Signal, 1)
 

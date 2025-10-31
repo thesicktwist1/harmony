@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"os"
 	"path"
+	"strings"
 	"testing"
 	"time"
 
@@ -386,7 +387,7 @@ func TestCreateStorage(t *testing.T) {
 
 	var (
 		tmp    = t.TempDir()
-		client = newClient(watcher, nil)
+		client = NewClient(watcher, nil)
 	)
 
 	err = os.Chdir(tmp)
@@ -544,6 +545,8 @@ func TestSyncTreeCases(t *testing.T) {
 
 			if tc.wantBackupAsFile {
 				require.NoError(t, os.WriteFile(backup, nil, 0777))
+			} else {
+				require.NoError(t, os.MkdirAll(backup, 0777))
 			}
 
 			watcher, err := fsnotify.NewWatcher()
@@ -587,14 +590,40 @@ func TestSyncTreeCases(t *testing.T) {
 				require.Nil(t, fe, "did not expect event but received one")
 			}
 
+			gotExists := make(map[string]bool)
 			// verify filesystem expectations
-			for p, shouldExist := range tc.wantExists {
-				_, err := os.Stat(p)
-				if shouldExist {
-					require.NoErrorf(t, err, "expected path to exist: %s", p)
+			entries, err := os.ReadDir(storage)
+			require.NoError(t, err)
+
+			backupEnt, err := os.ReadDir(backup)
+			require.NoError(t, err)
+
+			for _, file := range backupEnt {
+				var entryName string
+				splited := strings.Split(file.Name(), backupSep)
+				if len(splited) == 1 {
+					entryName = splited[0]
 				} else {
-					require.Truef(t, os.IsNotExist(err), "expected path to not exist: %s", p)
+					entryName = strings.Join(splited[1:], "")
 				}
+				entryPath := path.Join(backup, entryName)
+				gotExists[entryPath] = true
+			}
+
+			for _, file := range entries {
+				var entryName string
+				splited := strings.Split(file.Name(), backupSep)
+				if len(splited) == 1 {
+					entryName = splited[0]
+				} else {
+					entryName = strings.Join(splited[1:], "")
+				}
+				entryPath := path.Join(storage, entryName)
+				gotExists[entryPath] = true
+			}
+			for want := range tc.wantExists {
+				_, exists := gotExists[want]
+				require.True(t, exists)
 			}
 			require.NoError(t, os.Chdir(wd))
 		})

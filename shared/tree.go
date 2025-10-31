@@ -18,7 +18,7 @@ type FSNode struct {
 	Childs  []*FSNode
 }
 
-func BuildTree(p string, parent *FSNode) *FSNode {
+func BuildTree(p string) *FSNode {
 	info, err := os.Stat(p)
 	if err != nil || !info.IsDir() {
 		slog.Error("error fetching info : %v", "err", err)
@@ -38,7 +38,7 @@ func BuildTree(p string, parent *FSNode) *FSNode {
 	for i, child := range childs {
 		childPath := path.Join(p, child.Name())
 		if child.IsDir() {
-			currNode.Childs[i] = BuildTree(childPath, currNode)
+			currNode.Childs[i] = BuildTree(childPath)
 		} else {
 			info, err := child.Info()
 			if err != nil {

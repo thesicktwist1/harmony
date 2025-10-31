@@ -846,7 +846,7 @@ func TestBuildTree(t *testing.T) {
 		} else {
 			require.NotNil(t, tc.want)
 
-			got := BuildTree(tc.path, nil)
+			got := BuildTree(tc.path)
 
 			SortChilds(got)
 			SortChilds(tc.want)

@@ -12,11 +12,11 @@ type EnvelopeType int
 
 const (
 	Event EnvelopeType = iota
+	FSTree
 )
 
 const (
 	Update = "UPDATE"
-	Sync   = "SYNC"
 )
 
 var (
