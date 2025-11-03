@@ -13,10 +13,10 @@ build:
 	( cd server && go build -o ../bin/server . )
 
 lint:
-	( cd server && staticcheck ./... )
-	( cd shared && staticcheck ./... )
-	( cd client && staticcheck ./... )
+	( cd server && go run honnef.co/go/tools/cmd/staticcheck@latest ./... )
+	( cd shared && go run honnef.co/go/tools/cmd/staticcheck@latest ./... )
+	( cd client && go run honnef.co/go/tools/cmd/staticcheck@latest ./... )
 
 clean:
-	( cd server && rm storage )
-	( cd client && rm storage )
+	( cd server && rm -rf storage/* && rm -rf bin/* )
+	( cd client && rm -rf storage/* && rm -rf backup/* && rm -rf bin/* )

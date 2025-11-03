@@ -48,32 +48,32 @@ func (s serverHub) Create(ctx context.Context, event *FileEvent) error {
 
 func (s serverHub) Process(ctx context.Context, event *FileEvent) error {
 	if err := isValidPath(event.Path); err != nil {
-		return EventError{err: err, data: event}
+		return EventError{err: err, path: event.Path, data: event.Op}
 	}
 	fmt.Printf("Processing event: %s, path: %s\n", event.Op, event.Path)
 	switch event.Op {
 	case fsnotify.Create.String():
 		if err := s.Create(ctx, event); err != nil {
-			return EventError{err: err, data: event}
+			return EventError{err: err, path: event.Path, data: event.Op}
 		}
 	case fsnotify.Remove.String():
 		if err := s.Remove(ctx, event); err != nil {
-			return EventError{err: err, data: event}
+			return EventError{err: err, path: event.Path, data: event.Op}
 		}
 	case fsnotify.Rename.String():
 		if err := s.Rename(ctx, event); err != nil {
-			return EventError{err: err, data: event}
+			return EventError{err: err, path: event.Path, data: event.Op}
 		}
 	case fsnotify.Write.String():
 		if err := s.Write(ctx, event); err != nil {
-			return EventError{err: err, data: event}
+			return EventError{err: err, path: event.Path, data: event.Op}
 		}
 	case Update:
 		if err := s.Update(ctx, event); err != nil {
-			return EventError{err: err, data: event}
+			return EventError{err: err, path: event.Path, data: event.Op}
 		}
 	default:
-		return EventError{err: ErrUnsupportedEvent, data: event.Op}
+		return EventError{err: ErrUnsupportedEvent, path: event.Path, data: event.Op}
 	}
 	return nil
 }
@@ -113,7 +113,11 @@ func (s serverHub) Rename(ctx context.Context, event *FileEvent) error {
 func (s serverHub) Remove(ctx context.Context, event *FileEvent) error {
 	stat, err := os.Stat(event.Path)
 	if err != nil {
-		return err
+		if errors.Is(err, os.ErrNotExist) {
+			return nil
+		} else {
+			return err
+		}
 	}
 	if stat.IsDir() != event.IsDir {
 		return ErrMalformedEvent
@@ -254,8 +258,4 @@ func (s serverHub) renameFile(ctx context.Context, event *FileEvent) error {
 		return err
 	}
 	return nil
-}
-
-func (s serverHub) CreateStorage() error {
-	return createStorage()
 }

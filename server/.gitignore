@@ -1,4 +1,5 @@
-storage/*
+
 .env
 vendor/
 bin/
+/storage

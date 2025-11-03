@@ -42,6 +42,8 @@ type directory struct {
 	childs childDirs
 }
 
+var once sync.Once
+
 type WatchedDir map[string]*directory
 
 type childDirs map[string]struct{}
@@ -80,6 +82,35 @@ func newDirectory(name, path string) *directory {
 	}
 }
 
+func (r *registry) MoveToBackUp(src, destName string) error {
+	fileinfo, err := os.Stat(backup)
+	if err != nil {
+		if !errors.Is(err, os.ErrNotExist) {
+			return err
+		}
+		if err := os.Mkdir(backup, 0777); err != nil {
+			return err
+		}
+	}
+	if !fileinfo.IsDir() {
+		if err := os.RemoveAll(backup); err != nil {
+			return err
+		}
+		if err := os.Mkdir(backup, 0777); err != nil {
+			return err
+		}
+	}
+	destName = strings.Join([]string{
+		time.Now().Format(backUpFormat),
+		destName,
+	}, backupSep)
+	dest := path.Join(backup, destName)
+	if _, err := os.Stat(dest); err == nil {
+		return os.ErrExist
+	}
+	return os.Rename(src, dest)
+}
+
 func (r *registry) SyncTree(root *shared.FSNode) {
 	if root == nil {
 		return
@@ -109,36 +140,8 @@ func (r *registry) SyncTree(root *shared.FSNode) {
 	} else {
 		if root.IsDir != fileinfo.IsDir() {
 			// move file to backup
-			if info, err := os.Stat(backup); err != nil {
-				if errors.Is(err, os.ErrNotExist) {
-					if err := os.Mkdir(backup, 0777); err != nil {
-						slog.Error("error creating backup directory : %v", "err", err)
-						return
-					}
-				} else {
-					slog.Error("error : %v", "err", err)
-					return
-				}
-			} else {
-				if !info.IsDir() {
-					if err := os.Remove(backup); err != nil {
-						slog.Error("error : %v", "err", err)
-						return
-					}
-					if err := os.Mkdir(backup, 0777); err != nil {
-						slog.Error("error : %v", "err", err)
-						return
-					}
-				}
-			}
-			newName := strings.Join([]string{
-				fileinfo.ModTime().Format(backUpFormat),
-				fileinfo.Name()}, backupSep)
-
-			newPath := path.Join(backup, newName)
-
-			if err := os.Rename(root.Path, newPath); err != nil {
-				slog.Error("error moving path to new path: %v", "err", err)
+			if err := r.MoveToBackUp(root.Path, fileinfo.Name()); err != nil {
+				slog.Error("error file to backup : ", "err", err)
 				return
 			}
 			if root.IsDir {
@@ -156,42 +159,53 @@ func (r *registry) SyncTree(root *shared.FSNode) {
 				}
 				return
 			}
-		} else {
-			if !root.IsDir {
-				nodeTimestamp, err := time.Parse(shared.TimeLayout, root.ModTime)
-				if err != nil {
-					slog.Error("error parsing time : %v", "err", err)
+		}
+	}
+	if !root.IsDir {
+		nodeTimestamp, err := time.Parse(shared.TimeLayout, root.ModTime)
+		if err != nil {
+			slog.Error("error parsing time : %v", "err", err)
+			return
+		}
+		data, err := os.ReadFile(root.Path)
+		if err != nil {
+			slog.Error("error reading file : %v", "err", err)
+			return
+		}
+		sumBytes := sha256.Sum256(data)
+		hash := hex.EncodeToString(sumBytes[:])
+		if root.Hash != hash {
+			if fileinfo.ModTime().After(nodeTimestamp) {
+				if err := r.broadcastEvent(&shared.FileEvent{
+					Path: root.Path,
+					Op:   fsnotify.Write.String(),
+					Hash: hash,
+					Data: data,
+				}); err != nil {
+					slog.Error("error broadcasting event : %v", "err", err)
 					return
-				}
-				data, err := os.ReadFile(root.Path)
-				if err != nil {
-					slog.Error("error reading file : %v", "err", err)
-					return
-				}
-				sumBytes := sha256.Sum256(data)
-				hash := hex.EncodeToString(sumBytes[:])
-				if root.Hash != hash {
-					if fileinfo.ModTime().After(nodeTimestamp) {
-						if err := r.broadcastEvent(&shared.FileEvent{
-							Path: root.Path,
-							Op:   fsnotify.Write.String(),
-							Hash: hash,
-							Data: data,
-						}); err != nil {
-							slog.Error("error broadcasting event : %v", "err", err)
-							return
-						}
-					}
 				}
 			}
 		}
-	}
-	if root.IsDir {
+	} else {
+		entry, err := os.ReadDir(root.Path)
+		if err != nil {
+			slog.Error("error reading directory : ", "err", err)
+			return
+		}
+		for _, child := range entry {
+			_, exists := root.Childs[child.Name()]
+			if !exists {
+				childPath := path.Join(root.Path, child.Name())
+				if err := r.MoveToBackUp(childPath, child.Name()); err != nil {
+					slog.Error("error : ", "err", err)
+				}
+			}
+		}
 		for _, child := range root.Childs {
 			r.SyncTree(child)
 		}
 	}
-
 }
 
 func (r *registry) appendDir(path string) error {
@@ -231,7 +245,7 @@ func (r *registry) removeDir(path string) error {
 
 	for child := range dic.childs {
 		if err := r.removeDir(child); err != nil {
-			return err
+			slog.Error("error removing directory :", "err", err)
 		}
 	}
 

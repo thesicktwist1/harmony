@@ -136,23 +136,12 @@ func TestServerHubCreateEvent(t *testing.T) {
 			errType: os.ErrNotExist,
 		},
 		{
-			name: "invalid create (already exists)",
+			name: "creating preexisting file",
 			event: &FileEvent{
 				Path:  path.Join(storage, "dir-1", "file-1.txt"),
 				Op:    fsnotify.Create.String(),
 				IsDir: false,
 			},
-			wantErr: true,
-			errType: os.ErrExist,
-		}, {
-			name: "invalid create (already exists)",
-			event: &FileEvent{
-				Path:  path.Join(storage, "dir-1", "file-1.txt"),
-				Op:    fsnotify.Create.String(),
-				IsDir: false,
-			},
-			wantErr: true,
-			errType: os.ErrExist,
 		}, {
 			name: "invalid (top directory doesn't match)",
 			event: &FileEvent{
@@ -191,9 +180,6 @@ func TestServerHubCreateEvent(t *testing.T) {
 		} else {
 
 			require.NoErrorf(t, err, "%s", err)
-
-			_, exists := paths[tc.event.Path]
-			require.False(t, exists)
 
 			for _, p := range tc.wantNotExists {
 				_, err := os.Stat(p)
@@ -465,8 +451,8 @@ func TestServerHubRemoveEvent(t *testing.T) {
 				Op:    fsnotify.Remove.String(),
 				IsDir: false,
 			},
-			wantErr: true,
-			errType: os.ErrNotExist,
+			wantErr:       false,
+			wantNotExists: []string{path.Join(storage, "dir-1", "not_exists.txt")},
 		},
 		{
 			name: "malformed event (doesn't match file type)",
@@ -505,9 +491,6 @@ func TestServerHubRemoveEvent(t *testing.T) {
 			assert.True(t, errors.Is(be.Unwrap(), tc.errType))
 		} else {
 			require.NoErrorf(t, err, "%s", err)
-
-			_, exists := paths[tc.event.Path]
-			require.True(t, exists)
 
 			for _, p := range tc.wantNotExists {
 				_, err := os.Stat(p)
@@ -799,12 +782,12 @@ func TestBuildTree(t *testing.T) {
 			want: &FSNode{
 				Path:  path.Join(storage, "dir-2"),
 				IsDir: true,
-				Childs: []*FSNode{
-					{
+				Childs: map[string]*FSNode{
+					"subdir-2": {
 						Path:  path.Join(storage, "dir-2", "subdir-2"),
 						IsDir: true,
 					},
-					{
+					"file-2.txt": {
 						Path: path.Join(storage, "dir-2", "file-2.txt"),
 						Hash: "35b6affcaf3e88291a3eddfcdf6634f4cfc5c31126d1648ab36c09aff1c1f1b1",
 					},
@@ -848,14 +831,8 @@ func TestBuildTree(t *testing.T) {
 
 			got := BuildTree(tc.path)
 
-			SortChilds(got)
-			SortChilds(tc.want)
-
 			compareNodes(tc.want, got)
 
-			for i := range len(tc.want.Childs) {
-				compareNodes(tc.want.Childs[i], got.Childs[i])
-			}
 		}
 
 		err = os.Chdir(wd)

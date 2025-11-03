@@ -328,18 +328,15 @@ func TestRegistry(t *testing.T) {
 		db, err := makeDB(dbPath, "sqlite")
 		require.NoError(t, err)
 
-		err = initDB(db)
-		require.NoError(t, err)
+		require.NoError(t, initDB(db))
 
-		err = initTMP(tmp)
-		require.NoError(t, err)
+		require.NoError(t, initTMP(tmp))
 
 		watcher, err := fsnotify.NewWatcher()
 		require.NoError(t, err)
 		defer watcher.Close()
 
-		err = os.Chdir(tmp)
-		require.NoError(t, err)
+		require.NoError(t, os.Chdir(tmp))
 
 		registry := newRegistry(watcher, db)
 
@@ -350,28 +347,25 @@ func TestRegistry(t *testing.T) {
 
 		go registry.ListenForEvents(ctx)
 
-		time.Sleep(time.Millisecond * 300)
-		err = tc.event(tc.path, perm)
-		require.NoError(t, err)
-		time.Sleep(time.Millisecond * 300)
+		require.NoError(t, tc.event(tc.path, perm))
 
 		select {
 		case msg := <-registry.msgBuffer:
 			var envelope shared.Envelope
-			err := json.Unmarshal(msg, &envelope)
-			require.NoError(t, err)
+
+			require.NoError(t, json.Unmarshal(msg, &envelope))
 
 			var got shared.FileEvent
-			err = json.Unmarshal(envelope.Message, &got)
-			require.NoError(t, err)
+
+			require.NoError(t, json.Unmarshal(envelope.Message, &got))
 
 			require.Equal(t, tc.wantFileEvent, &got)
-		default:
+
+		case <-time.After(300 * time.Millisecond):
 			t.Fatal("error receiving message:", tc.name)
 		}
 
-		err = os.Chdir(wd)
-		require.NoError(t, err)
+		require.NoError(t, os.Chdir(wd))
 	}
 }
 
@@ -386,15 +380,14 @@ func TestCreateStorage(t *testing.T) {
 	defer watcher.Close()
 
 	var (
-		tmp    = t.TempDir()
-		client = NewClient(watcher, nil)
+		tmp = t.TempDir()
 	)
 
 	err = os.Chdir(tmp)
 	require.NoError(t, err)
 
 	//test 1 - storage doesn't exist so we create it
-	err = client.CreateStorage()
+	err = shared.MakeStorage()
 	require.NoError(t, err)
 
 	got, err := os.Stat(storage)
@@ -409,7 +402,7 @@ func TestCreateStorage(t *testing.T) {
 	err = os.Mkdir(storage, 0777)
 	require.NoError(t, err)
 
-	err = client.CreateStorage()
+	err = shared.MakeStorage()
 	require.NoError(t, err)
 
 	got, err = os.Stat(storage)
@@ -424,7 +417,7 @@ func TestCreateStorage(t *testing.T) {
 	err = os.WriteFile(storage, nil, 0777)
 	require.NoError(t, err)
 
-	err = client.CreateStorage()
+	err = shared.MakeStorage()
 	require.NoError(t, err)
 
 	got, err = os.Stat(storage)

@@ -31,7 +31,10 @@ func NewClient(watcher *fsnotify.Watcher, db *sql.DB) *client {
 
 func (c *client) Run(ctx context.Context) error {
 	log.Println("client starting...")
-	if err := c.CreateStorage(); err != nil {
+	if err := shared.MakeStorage(); err != nil {
+		return err
+	}
+	if err := shared.MakeBackUp(); err != nil {
 		return err
 	}
 	if err := c.registry.appendDir(storage); err != nil {
@@ -41,14 +44,16 @@ func (c *client) Run(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	defer conn.CloseNow()
-	go c.writeMessages(ctx, conn)
-	c.readMessages(ctx, conn)
+
+	go func() {
+		defer conn.CloseNow()
+		go c.writeMessages(ctx, conn)
+		c.readMessages(ctx, conn)
+	}()
 	return nil
 }
 
 func (c *client) readMessages(ctx context.Context, conn *websocket.Conn) {
-
 	for {
 		select {
 		case <-ctx.Done():
@@ -84,6 +89,7 @@ func (c *client) readMessages(ctx context.Context, conn *websocket.Conn) {
 						return
 					}
 					c.registry.SyncTree(&tree)
+					once.Do(func() { go c.registry.ListenForEvents(ctx) })
 				}
 			}
 		}

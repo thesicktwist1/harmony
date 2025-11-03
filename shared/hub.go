@@ -9,9 +9,10 @@ import (
 	"strings"
 )
 
+const backup = "backup"
+
 type Hub interface {
 	Process(context.Context, *FileEvent) error
-	CreateStorage() error
 }
 
 func write(event *FileEvent) error {
@@ -91,12 +92,11 @@ func create(event *FileEvent) error {
 		} else {
 			return err
 		}
-	} else {
-		return os.ErrExist
 	}
+	return nil
 }
 
-func createStorage() error {
+func MakeStorage() error {
 	info, err := os.Stat(storage)
 	if err != nil {
 		if !errors.Is(err, os.ErrNotExist) {
@@ -109,6 +109,28 @@ func createStorage() error {
 				return err
 			}
 			return os.Mkdir(storage, 0777)
+		}
+	}
+	return nil
+}
+
+func MakeBackUp() error {
+	if info, err := os.Stat(backup); err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			if err := os.Mkdir(backup, 0777); err != nil {
+				return err
+			}
+		} else {
+			return err
+		}
+	} else {
+		if !info.IsDir() {
+			if err := os.Remove(backup); err != nil {
+				return err
+			}
+			if err := os.Mkdir(backup, 0777); err != nil {
+				return err
+			}
 		}
 	}
 	return nil

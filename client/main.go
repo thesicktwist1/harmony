@@ -40,11 +40,9 @@ func main() {
 
 	signal.Notify(signalChan, syscall.SIGINT, syscall.SIGTERM)
 
-	go func() {
-		if err := c.Run(ctx); err != nil {
-			log.Fatal(err)
-		}
-	}()
+	if err := c.Run(ctx); err != nil {
+		log.Fatal(err)
+	}
 
 	go func() {
 		sig := <-signalChan

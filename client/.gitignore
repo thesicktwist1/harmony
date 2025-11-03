@@ -2,3 +2,5 @@ storage/*
 .env
 /vendor/
 bin/
+/storage
+/backup

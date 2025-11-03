@@ -36,7 +36,7 @@ func main() {
 
 	server := NewServer(ctx, db)
 
-	if err := server.CreateStorage(); err != nil {
+	if err := shared.MakeStorage(); err != nil {
 		log.Fatal(err)
 	}
 

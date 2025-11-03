@@ -30,10 +30,11 @@ var (
 type EventError struct {
 	err  error
 	data any
+	path string
 }
 
 func (e EventError) Error() string {
-	return fmt.Sprintf("%v : %+v", e.err, e.data)
+	return fmt.Sprintf("%v : %s : %+v", e.err, e.path, e.data)
 }
 
 func (e EventError) Unwrap() error {
