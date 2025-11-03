@@ -20,3 +20,4 @@ lint:
 clean:
 	( cd server && rm -rf storage/* && rm -rf bin/* )
 	( cd client && rm -rf storage/* && rm -rf backup/* && rm -rf bin/* )
+	
