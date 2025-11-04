@@ -32,7 +32,7 @@ const (
 	storage      = "storage"
 	backup       = "backup"
 	backupSep    = "_"
-	bufferSize   = 32
+	bufferSize   = 48
 	backUpFormat = "January 2, 2006 15:04:05"
 )
 

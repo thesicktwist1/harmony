@@ -23,11 +23,16 @@ const (
 )
 
 type serverHub struct {
-	DB *database.Queries
+	DB       *database.Queries
+	handlers map[string]EventHandler
 }
 
 func NewServerHub(db *database.Queries) serverHub {
-	return serverHub{DB: db}
+	s := serverHub{
+		DB: db,
+	}
+	s.setupServerEventHandlers()
+	return s
 }
 
 func (s serverHub) Create(ctx context.Context, event *FileEvent) error {
@@ -51,29 +56,12 @@ func (s serverHub) Process(ctx context.Context, event *FileEvent) error {
 		return EventError{err: err, path: event.Path, data: event.Op}
 	}
 	fmt.Printf("Processing event: %s, path: %s\n", event.Op, event.Path)
-	switch event.Op {
-	case fsnotify.Create.String():
-		if err := s.Create(ctx, event); err != nil {
-			return EventError{err: err, path: event.Path, data: event.Op}
-		}
-	case fsnotify.Remove.String():
-		if err := s.Remove(ctx, event); err != nil {
-			return EventError{err: err, path: event.Path, data: event.Op}
-		}
-	case fsnotify.Rename.String():
-		if err := s.Rename(ctx, event); err != nil {
-			return EventError{err: err, path: event.Path, data: event.Op}
-		}
-	case fsnotify.Write.String():
-		if err := s.Write(ctx, event); err != nil {
-			return EventError{err: err, path: event.Path, data: event.Op}
-		}
-	case Update:
-		if err := s.Update(ctx, event); err != nil {
-			return EventError{err: err, path: event.Path, data: event.Op}
-		}
-	default:
-		return EventError{err: ErrUnsupportedEvent, path: event.Path, data: event.Op}
+	handler, exist := s.handlers[event.Op]
+	if !exist {
+		return EventError{err: ErrUnsupportedEvent, data: event.Op}
+	}
+	if err := handler(ctx, event); err != nil {
+		return EventError{err: err, path: event.Path, data: event}
 	}
 	return nil
 }
@@ -258,4 +246,16 @@ func (s serverHub) renameFile(ctx context.Context, event *FileEvent) error {
 		return err
 	}
 	return nil
+}
+
+func (s *serverHub) setupServerEventHandlers() {
+	handlers := make(map[string]EventHandler)
+
+	handlers[fsnotify.Create.String()] = s.Create
+	handlers[fsnotify.Remove.String()] = s.Remove
+	handlers[fsnotify.Rename.String()] = s.Rename
+	handlers[fsnotify.Write.String()] = s.Write
+	handlers[Update] = s.Update
+
+	s.handlers = handlers
 }

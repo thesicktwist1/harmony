@@ -8,42 +8,50 @@ import (
 )
 
 type clientHub struct {
+	handlers map[string]EventHandler
 }
 
 func NewClientHub() clientHub {
-	return clientHub{}
+	return clientHub{
+		handlers: setupClientEventHandler(),
+	}
 }
+
+type EventHandler func(context.Context, *FileEvent) error
 
 func (c clientHub) Process(ctx context.Context, event *FileEvent) error {
 	if err := isValidPath(event.Path); err != nil {
 		return EventError{err: err, data: event}
 	}
-	switch event.Op {
-	case fsnotify.Create.String():
-		if err := create(event); err != nil {
-			return EventError{err: err, data: event}
-		}
-	case fsnotify.Remove.String():
-		if err := os.RemoveAll(event.Path); err != nil {
-			return EventError{err: err, data: event}
-		}
-	case fsnotify.Rename.String():
-		if err := rename(event); err != nil {
-			return EventError{err: err, data: event}
-		}
-		if err := os.Rename(event.Path, event.NewPath); err != nil {
-			return EventError{err: err, data: event}
-		}
-	case fsnotify.Write.String():
-		if err := write(event); err != nil {
-			return EventError{err: err, data: event}
-		}
-	case Update:
-		if err := write(event); err != nil {
-			return EventError{err: err, data: event}
-		}
-	default:
-		return EventError{err: ErrUnsupportedEvent, data: event}
+	handler, exist := c.handlers[event.Op]
+	if !exist {
+		return EventError{err: ErrUnsupportedEvent, data: event.Op}
+	}
+	if err := handler(nil, event); err != nil {
+		return EventError{err: err, path: event.Path, data: event.Hash}
 	}
 	return nil
+}
+
+func setupClientEventHandler() map[string]EventHandler {
+	handlers := make(map[string]EventHandler)
+	handlers[fsnotify.Create.String()] = func(_ context.Context, fe *FileEvent) error {
+		return create(fe)
+	}
+	handlers[fsnotify.Write.String()] = func(_ context.Context, fe *FileEvent) error {
+		return write(fe)
+	}
+	handlers[fsnotify.Rename.String()] = func(_ context.Context, fe *FileEvent) error {
+		if err := rename(fe); err != nil {
+			return err
+		}
+		return os.Rename(fe.Path, fe.NewPath)
+	}
+	handlers[fsnotify.Remove.String()] = func(_ context.Context, fe *FileEvent) error {
+		return os.RemoveAll(fe.Path)
+	}
+	handlers[Update] = func(_ context.Context, fe *FileEvent) error {
+		return write(fe)
+	}
+	return handlers
 }

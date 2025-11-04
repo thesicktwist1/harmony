@@ -8,7 +8,7 @@ import (
 )
 
 const (
-	bufferSize = 32
+	bufferSize = 48
 )
 
 type Client struct {
