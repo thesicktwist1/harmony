@@ -58,6 +58,7 @@ type registry struct {
 	// message channel used to write to the connection
 	msgBuffer chan []byte
 
+	// list the possible events from fsnotify
 	handlers map[fsnotify.Op]FSEventHandler
 
 	// mutex used to keep things safe
