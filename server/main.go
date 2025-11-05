@@ -20,7 +20,7 @@ func main() {
 	if dbURL == "" {
 		log.Fatal("DATABASE_URL environment variable is not set")
 	}
-	db, err := shared.OpenWithGoose(dbURL, "libsql", shared.WithReset())
+	db, err := shared.OpenWithGoose(dbURL, "libsql")
 	if err != nil {
 		log.Fatal(err)
 	}
