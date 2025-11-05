@@ -18,7 +18,7 @@ import (
 	"github.com/thesicktwist1/harmony/shared"
 )
 
-func (r *registry) handleRemove(ctx context.Context, e fsnotify.Event) error {
+func (r *registry) Remove(ctx context.Context, e fsnotify.Event) error {
 	isDir := r.isDir(e.Name)
 	if isDir {
 		if err := r.removeDir(e.Name); err != nil {
@@ -41,7 +41,7 @@ func (r *registry) handleRemove(ctx context.Context, e fsnotify.Event) error {
 	return nil
 }
 
-func (r *registry) handleWrite(ctx context.Context, e fsnotify.Event) error {
+func (r *registry) Write(ctx context.Context, e fsnotify.Event) error {
 	var exists bool
 	fileinfo, err := r.DB.GetFile(ctx, e.Name)
 	if err != nil {
@@ -102,7 +102,7 @@ func (r *registry) handleWrite(ctx context.Context, e fsnotify.Event) error {
 	return nil
 }
 
-func (r *registry) handleCreate(ctx context.Context, event fsnotify.Event) error {
+func (r *registry) Create(ctx context.Context, event fsnotify.Event) error {
 	stat, err := os.Stat(event.Name)
 	if err != nil {
 		return err
@@ -115,14 +115,14 @@ func (r *registry) handleCreate(ctx context.Context, event fsnotify.Event) error
 			return err
 		}
 	} else {
-		if err := r.handleWrite(ctx, event); err != nil {
+		if err := r.Write(ctx, event); err != nil {
 			return err
 		}
 	}
 	return nil
 }
 
-func (r *registry) handleRename(ctx context.Context, e fsnotify.Event) error {
+func (r *registry) Rename(ctx context.Context, e fsnotify.Event) error {
 	if _, err := r.DB.GetFile(ctx, e.RenamedFrom); err != nil {
 		return err
 	}
@@ -168,7 +168,7 @@ func (r *registry) handleDir(ctx context.Context, e fsnotify.Event) error {
 	for _, child := range childs {
 		childPath := path.Join(e.Name, child.Name())
 		if !child.IsDir() {
-			if err := r.handleWrite(ctx, fsnotify.Event{
+			if err := r.Write(ctx, fsnotify.Event{
 				Name: childPath,
 				Op:   fsnotify.Create,
 			}); err != nil {

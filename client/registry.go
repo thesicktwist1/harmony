@@ -324,9 +324,9 @@ func (r *registry) MoveToBackUp(src, destName string) error {
 
 func (r *registry) setupFSEventHandler() {
 	r.handlers = map[fsnotify.Op]FSEventHandler{
-		fsnotify.Create: r.handleCreate,
-		fsnotify.Remove: r.handleRemove,
-		fsnotify.Write:  r.handleWrite,
-		fsnotify.Rename: r.handleRename,
+		fsnotify.Create: r.Create,
+		fsnotify.Remove: r.Remove,
+		fsnotify.Write:  r.Write,
+		fsnotify.Rename: r.Rename,
 	}
 }
